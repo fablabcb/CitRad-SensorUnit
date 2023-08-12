@@ -1,0 +1,41 @@
+Circuit: * C:\Users\mjong\Documents\Projekte\Radar_Amp\Simulation\Audio_Output.asc
+
+Direct Newton iteration failed to find .op point.  (Use ".option noopiter" to skip.)
+Starting Gmin stepping
+Gmin = 10
+Gmin = 1.07374
+Gmin = 0.115292
+Gmin = 0.0123794
+Gmin = 0.00132923
+Gmin = 0.000142725
+Gmin = 1.5325e-05
+Gmin = 1.6455e-06
+Gmin = 1.76685e-07
+Gmin = 1.89714e-08
+Gmin = 2.03704e-09
+Gmin = 2.18725e-10
+Gmin = 2.34854e-11
+Gmin = 2.52173e-12
+Gmin = 2.70769e-13
+Gmin = 0
+Gmin stepping succeeded in finding the operating point.
+
+
+Date: Fri Jun 23 22:37:47 2023
+Total elapsed time: 0.216 seconds.
+
+tnom = 27
+temp = 27
+method = modified trap
+totiter = 5572
+traniter = 5223
+tranpoints = 1825
+accept = 1375
+rejected = 450
+matrix size = 8
+fillins = 0
+solver = Normal
+Avg thread counts: 1.5/2.5/2.4/1.5
+Matrix Compiler1:      20 opcodes  0.2/[0.2]/0.2
+Matrix Compiler2: off  [0.3]/1.0/0.4
+
