@@ -10,6 +10,22 @@
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
+#include <utility/imxrt_hw.h>
+  
+void setI2SFreq(int freq) {
+  // PLL between 27*24 = 648MHz und 54*24=1296MHz
+  int n1 = 4; //SAI prescaler 4 => (n1*n2) = multiple of 4
+  int n2 = 1 + (24000000 * 27) / (freq * 256 * n1);
+  double C = ((double)freq * 256 * n1 * n2) / 24000000;
+  int c0 = C;
+  int c2 = 10000;
+  int c1 = C * c2 - (c0 * c2);
+  set_audioClock(c0, c1, c2, true);
+  CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK))
+       | CCM_CS1CDR_SAI1_CLK_PRED(n1-1) // &0x07
+       | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
+//Serial.printf("SetI2SFreq(%d)\n",freq);
+}
 
 AudioAnalyzeFFT1024      fft1024_1;      //xy=862.3333129882812,439.33331298828125
 AudioAmplifier           amp1;           //xy=425,443
@@ -74,6 +90,8 @@ short filt_coeff[TAP_NUM] = {
 
 
 void setup() {
+  setI2SFreq(11000);
+
   // Audio connections require memory to work.  For more
   // detailed information, see the MemoryAndCpuUsage example
   AudioMemory(60);
@@ -81,7 +99,7 @@ void setup() {
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(AUDIO_INPUT_MIC);
-  sgtl5000_1.micGain(50); //16 is good
+  sgtl5000_1.micGain(8); //16 is good
   //sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
 
@@ -116,8 +134,10 @@ void loop() {
   if(fft1024_1.available())
   {
 
+    
+
     // max speed fft bin: 154*(44100/1024)/44 = 150,732 km/h
-    for(i = 0; i <= 154; i++)
+    for(i = 0; i <= 511; i++)
     {
       Serial.print((int16_t)(fft1024_1.read(i) * 1000));
 

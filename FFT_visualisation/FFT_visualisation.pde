@@ -6,11 +6,18 @@ int xStart = 70;
 int xPos = xStart;         // horizontal position of the graph
 float speed = 0;
 float old_speed = 0;
-int[] nums = new int[513];
+int num_fft_bins = 200;
+float[] nums = new float[num_fft_bins+2];
 float spec_speed = 0;
-float speed_conversion = 0.9787819602; //44100/1024/44; //1.578125;
-int max_frequency = 51;
+int sample_rate = 11000;
+float fft_bin_width = sample_rate/1024;
+float speed_conversion = fft_bin_width/44.0; //44100/1024/44; //1.578125;
+int max_frequency = 100;
+
 String inString;
+float peak;
+float oldpeak = 0;
+ 
 
 void setup () {
   // set the window size:
@@ -73,13 +80,15 @@ void draw () {
     //fill(xPos, 100, nums[i]);
     spec_speed = i+2.5;
     spec_speed = map(spec_speed, 1, max_frequency, 0, height);
-    stroke(255-float(nums[i])*10);
+    stroke(255-nums[i]*10);
     rect(xPos, height-spec_speed, 1, height/max_frequency);
   }
   
   // draw the line:
   stroke(#ff0000);
-  line(xPos-1, height-old_speed, xPos, height - speed);
+  if(peak>0.01){
+    //line(xPos-1, height-old_speed, xPos, height - speed);
+  }
 
   // at the edge of the screen, go back to the beginning:
   if (xPos >= width) {
@@ -93,20 +102,28 @@ void draw () {
   //draw speed as text
   fill(255);
   stroke(255);
-  rect(width-120, 0, 120, 80); 
+  rect(width-220, 0, 220, 90); 
   fill(#ff0000);
   textSize(104); 
   textAlign(RIGHT);
-  text(round(nums[126]*speed_conversion), width, 80);
+  if(peak > 0.01){
+    text(round(speed), width, 80);
+  }
+  if(peak >= 1.0){
+    fill(#ff0000);
+  }else{
+    fill(#51A351);
+  }
+  rect(width/2-50, 0, 50, 30);
 }
 
 void keyPressed() {
   if (key == CODED) {
     if (keyCode == UP) {
-      max_frequency++;
+      max_frequency = min(num_fft_bins, max_frequency+1);
       draw_axis();
     } else if (keyCode == DOWN) {
-      max_frequency--;
+      max_frequency = max(40, max_frequency-1);
       draw_axis();
     } 
   } else if (key == 's') {
@@ -140,10 +157,16 @@ void serialEvent (Serial myPort) {
   if (inString != null) {
     old_speed = speed;
     
-    nums = int(trim(split(inString, ',')));
+    nums = float(trim(split(inString, ',')));
     // trim off any whitespace:
-    //println(nums[126]);
-    speed = map(nums[155], 0, max_frequency, 0, height);
-    //speed = map(4, 0, max_frequency, 0, height);
+    //println(nums[155]);
+    if(nums[num_fft_bins+1]>0.0 & nums[num_fft_bins+1]/44 < 150){
+      speed = map(nums[num_fft_bins+1], 1, max_frequency, 0, height) + fft_bin_width/44;
+      //speed = map(4, 0, max_frequency, 0, height);
+    }
+    peak = nums[num_fft_bins+2];
+    oldpeak = max(peak, oldpeak);
+    println(round(oldpeak*100)/100.0);
+    oldpeak = oldpeak*0.999;
   }
 }
