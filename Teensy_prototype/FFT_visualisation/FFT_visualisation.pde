@@ -3,11 +3,13 @@ import processing.serial.*;
 Serial myPort;        // The serial port
 PrintWriter output;
 int xStart = 70;
+int yStart = 50;
 int xPos = xStart;         // horizontal position of the graph
-float speed = 0;
-float old_speed = 0;
+int speed = 0;
+int oldspeed = 0;
 int num_fft_bins = 511;
-float[] nums = new float[num_fft_bins+2];
+float[] nums = new float[num_fft_bins+3];
+float mic_gain;
 float spec_speed = 0;
 int sample_rate = 44100;
 float fft_bin_width = sample_rate/1024;
@@ -18,12 +20,23 @@ String inString;
 float peak;
 float oldpeak = 0;
 int baseline;
- 
+PImage img;
+int window_height = num_fft_bins+yStart;
+int zoom = 1;
+int step;
+
 
 void setup () {
+  size(1000, 561);
   // set the window size:
-  fullScreen();
-  //size(1000, 500);
+  //size(displayWidth, displayHeight);
+  //fullScreen();
+  
+  windowResizable(false);
+  
+  
+  
+  
 
   // List all the available serial ports
   // if using Processing 2.1 or later, use Serial.printArray()
@@ -43,14 +56,17 @@ void setup () {
   // set initial background:
   background(255);
   
-  draw_axis();
-  
+  draw_axis(); 
+}
 
-  
+void windowResized() {
+  draw_axis();
 }
 
 void draw_axis () { 
-  baseline = height-50;
+  baseline = height-yStart;
+  img = createImage(1, num_fft_bins, RGB);
+  
   // axis
   stroke(#FFFFFF);
   fill(#FFFFFF);
@@ -59,9 +75,18 @@ void draw_axis () {
   
   stroke(#ff0000);
   line(xStart-1, 0, xStart-1, baseline);
-  for(int s =0; s < 1000; s=s+5){
+  if(zoom>=4){
+    step=5;
+  }else{
+    step=20;
+  }
+  if(zoom>=18){
+    step=1;
+  }
+     
+  for(int s =0; s < 1000; s=s+step){
     int tick_label = s;
-    float tick_position = map(tick_label/speed_conversion, 0, max_frequency, baseline, 0);
+    float tick_position = map(tick_label/speed_conversion, 0, num_fft_bins/zoom, baseline, 0);
     line(xStart-10, tick_position, xStart-1, tick_position);
     fill(#ff0000);
     textSize(20);
@@ -80,18 +105,35 @@ void draw () {
   output.print(inString);
   
   // draw waterfall spectrogramm
-  for(int i = 0; i < max_frequency; i++){
-    //fill(xPos, 100, nums[i]);
-    spec_speed = i;
-    spec_speed = map(spec_speed, 0, max_frequency, 0, baseline);
-    stroke(255-nums[i]*10);
-    rect(xPos, baseline-spec_speed, 1, -baseline/max_frequency);
+  //for(int i = 0; i < max_frequency; i++){
+  //  //fill(xPos, 100, nums[i]);
+  //  spec_speed = i;
+  //  spec_speed = map(spec_speed, 0, max_frequency, 0, baseline);
+  //  stroke(255-nums[i]*10);
+  //  rect(xPos, baseline-spec_speed, 1, -baseline/max_frequency);
+  //}
+  
+  img.loadPixels();
+  int j = img.height-1;
+  int k = 0;
+  for (int i = 0; i < num_fft_bins ; i++) {
+    float col = map(nums[k], 0, 200, 255, 0);
+    img.pixels[j] = color(col,col,col);
+    //img.pixels[j+1] = color(23,120,30);
+    
+    j--;
+    if(i%zoom==0){
+      k++;
+    }
   }
+  //img.pixels[img.height-1-(speed*zoom)-zoom/2] = color(200,20,40);
+  img.updatePixels();
+  image(img, xPos,0);
   
   // draw the line:
   stroke(#ff0000);
   //if(peak>0.05){
-    line(xPos-1, map(old_speed/speed_conversion, 0, max_frequency, baseline, 0), xPos, map(speed/speed_conversion, 0, max_frequency, baseline, 0));
+    //line(xPos-1, map(oldspeed, 0, (num_fft_bins/zoom), baseline, 0), xPos, map(speed, 0, num_fft_bins/zoom, baseline, 0));
   //}
 
   // at the edge of the screen, go back to the beginning:
@@ -110,26 +152,30 @@ void draw () {
   fill(#ff0000);
   textSize(104); 
   textAlign(RIGHT);
-  if(peak > 0.01){
-    text(round(speed), width, 80);
-  }
+  //if(peak > 0.01){
+    text(round(speed*speed_conversion), width, 80);
+  //}
   if(peak >= 1.0){
     fill(#ff0000);
   }else{
     fill(#51A351);
   }
-  rect(width/2-50, 0, 50, 30);
+  rect(width/2-25, 0, 50, 30);
+  fill(#000000);
+  textAlign(CENTER, TOP);
+  textSize(23);
+  text(round(mic_gain), width/2, 0);
 }
 
 void keyPressed() {
   if (key == CODED) {
     if (keyCode == UP) {
-      max_frequency = min(num_fft_bins, max_frequency+1);
+      zoom = min(zoom+1,100);
       draw_axis();
     } else if (keyCode == DOWN) {
-      max_frequency = max(40, max_frequency-1);
+      zoom = max(zoom-1, 1);
       draw_axis();
-    } 
+    }
   } else if (key == 's') {
     String filename = "screenshots/radar_spectrum_" + timestamp() + ".png"; 
     println(filename);
@@ -138,6 +184,12 @@ void keyPressed() {
     output.flush();  // Writes the remaining data to the file
     output.close();  // Finishes the file
     exit();  // Stops the program
+  } else if (key == '+'){
+    myPort.write(1);
+    println("increasing mic gain");
+  } else if (key == '-'){
+    myPort.write(0);
+    println("decreasing mic gain");
   }
 }
 
@@ -159,12 +211,13 @@ void serialEvent (Serial myPort) {
   
 
   if (inString != null) {
-    old_speed = speed;
+    oldspeed = speed;
     nums = float(trim(split(inString, ',')));
-    speed = nums[num_fft_bins+1];
+    speed = int(nums[num_fft_bins+1]);
     peak = nums[num_fft_bins+2];
     oldpeak = max(peak, oldpeak);
-    println(round(oldpeak*100)/100.0);
+    //println(round(oldpeak*100)/100.0);
     oldpeak = oldpeak*0.999;
+    mic_gain = nums[num_fft_bins+3];
   }
 }

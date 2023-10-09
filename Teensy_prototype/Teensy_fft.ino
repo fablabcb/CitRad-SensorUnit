@@ -23,6 +23,8 @@ const int sample_rate = 44100;
 uint16_t max_amplitude;                   //highest signal in spectrum              
 uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
+int input;
+int mic_gain = 16;
 
 AudioAnalyzeFFT1024      fft1024;      
 AudioAmplifier           amp1;           
@@ -50,7 +52,7 @@ void setup() {
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(AUDIO_INPUT_MIC);
-  sgtl5000_1.micGain(20); //16 is good
+  sgtl5000_1.micGain(mic_gain); 
   //sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
 
@@ -66,6 +68,19 @@ void setup() {
 
 
 void loop() {
+
+  if (Serial.available() > 0) {
+    input = Serial.read();
+
+    if(input==0){
+      mic_gain--;
+    }
+    if(input==1){
+      mic_gain++;
+    }
+    mic_gain = max(0, min(63, mic_gain));
+    sgtl5000_1.micGain(mic_gain);
+  }
 
   uint32_t i;
   // uint16_t test[51];
@@ -99,13 +114,13 @@ void loop() {
     max_amplitude = 0;
     max_freq_Index = 0;
 
-    for(i = 5; i < 512; i++) {    
-      if ((fft1024.output[i] > 20) & (fft1024.output[i] > max_amplitude)) {
+    for(i = 0; i < 512; i++) {    
+      if ((fft1024.output[i] > 5) & (fft1024.output[i] > max_amplitude)) {
         max_amplitude = fft1024.output[i];        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
-    Serial.print(max_freq_Index*speed_conversion);
+    Serial.print(max_freq_Index);
     Serial.print(",");
 
 
@@ -115,7 +130,8 @@ void loop() {
     }else{
       Serial.print("");
     }
-
+    Serial.print(",");
+    Serial.print(mic_gain);
     
     
     Serial.println("");
