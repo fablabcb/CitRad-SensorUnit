@@ -1,4 +1,5 @@
 #include <Audio.h>
+#include "OpenAudio_ArduinoLibrary.h"
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -25,21 +26,18 @@ uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
 int input;
 int mic_gain = 16;
+float saveDat[512];
 
-AudioAnalyzeFFT1024      fft1024;      
-AudioAmplifier           amp1;           
-AudioAnalyzePeak         peak1;          
-AudioMixer4              mixer;
+AudioAnalyzeFFT1024_F32      fft1024;      
+AudioAnalyzePeak_F32         peak1;          
 
-AudioInputI2S            mic;           
-AudioOutputI2S           headphone;           
-AudioConnection          patchCord1(mic, 1, mixer, 0);
-AudioControlSGTL5000     sgtl5000_1;     
-AudioConnection          patchCord3(mic, 0, amp1, 0);
-AudioConnection          patchCord4(amp1, 0, fft1024, 0);
-AudioConnection          patchCord5(mixer, 0, peak1, 0);
-AudioConnection          patchCord6(mixer, 0, headphone, 0);
-AudioConnection          patchCord7(mixer, 0, headphone, 1);
+AudioInputI2S_F32            mic;           
+AudioOutputI2S_F32           headphone;           
+AudioControlSGTL5000         sgtl5000_1;     
+AudioConnection_F32          patchCord3(mic, 0, fft1024, 0);
+AudioConnection_F32          patchCord5(mic, 0, peak1, 0);
+AudioConnection_F32          patchCord6(mic, 0, headphone, 0);
+AudioConnection_F32          patchCord7(mic, 0, headphone, 1);
 
 
 void setup() {
@@ -47,7 +45,7 @@ void setup() {
 
   // Audio connections require memory to work.  For more
   // detailed information, see the MemoryAndCpuUsage example
-  AudioMemory(60);
+  AudioMemory_F32(60);
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
@@ -56,9 +54,9 @@ void setup() {
   //sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
 
-  amp1.gain(1);
-
   fft1024.windowFunction(AudioWindowHanning1024);
+  fft1024.setNAverage(1);
+  fft1024.setOutputType(FFT_RMS);   // FFT_RMS or FFT_POWER or FFT_DBFS
 
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
@@ -96,10 +94,13 @@ void loop() {
 
   if(fft1024.available())
   {
+    float* pointer = fft1024.getData();
+    for (int  kk=0; kk<512; kk++) saveDat[kk]= *(pointer + kk);
+
     // output spectrum
     for(i = 0; i <= 511; i++)
     {
-      Serial.print(fft1024.output[i]);
+      Serial.print(saveDat[i], 0);
 
       
       //Serial.write((byte*)&test, sizeof(test));
@@ -114,9 +115,9 @@ void loop() {
     max_amplitude = 0;
     max_freq_Index = 0;
 
-    for(i = 0; i < 512; i++) {    
-      if ((fft1024.output[i] > 5) & (fft1024.output[i] > max_amplitude)) {
-        max_amplitude = fft1024.output[i];        //remember highest amplitude
+    for(i = 1; i < 512; i++) {    
+      if ((saveDat[i] > 5) & (saveDat[i] > max_amplitude)) {
+        max_amplitude = saveDat[i];        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
@@ -126,6 +127,7 @@ void loop() {
 
     // detect clipping / overall loudeness
     if(peak1.available()){
+      //Serial.print(max_amplitude);
       Serial.print(peak1.read());
     }else{
       Serial.print("");
