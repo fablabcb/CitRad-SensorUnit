@@ -33,9 +33,9 @@ AudioMixer4              mixer;
 
 AudioInputI2S            mic;           
 AudioOutputI2S           headphone;           
-AudioConnection          patchCord1(mic, 0, mixer, 0);
+AudioConnection          patchCord1(mic, 1, mixer, 0);
 AudioControlSGTL5000     sgtl5000_1;     
-AudioConnection          patchCord3(mic, amp1);
+AudioConnection          patchCord3(mic, 0, amp1, 0);
 AudioConnection          patchCord4(amp1, 0, fft1024, 0);
 AudioConnection          patchCord5(mixer, 0, peak1, 0);
 AudioConnection          patchCord6(mixer, 0, headphone, 0);
@@ -51,7 +51,7 @@ void setup() {
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
-  sgtl5000_1.inputSelect(AUDIO_INPUT_MIC);
+  sgtl5000_1.inputSelect(AUDIO_INPUT_MIC); //AUDIO_INPUT_LINEIN
   sgtl5000_1.micGain(mic_gain); 
   //sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
@@ -63,7 +63,7 @@ void setup() {
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
 
-  Serial.begin(1000000);
+  Serial.begin(9600);
 }
 
 
