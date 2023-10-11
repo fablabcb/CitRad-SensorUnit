@@ -99,7 +99,7 @@ void loop() {
     // output spectrum
     for(i = 0; i <= 511; i++)
     {
-      Serial.print((int16_t)(fft1024.read(i) * 1000));
+      Serial.print(fft1024.output[i]);
 
       
       //Serial.write((byte*)&test, sizeof(test));

@@ -117,7 +117,7 @@ void draw () {
   int j = img.height-1;
   int k = 0;
   for (int i = 0; i < num_fft_bins ; i++) {
-    float col = map(nums[k], 0, 200, 255, 0);
+    float col = map(nums[k], 0, 20000, 255, 0);
     img.pixels[j] = color(col,col,col);
     //img.pixels[j+1] = color(23,120,30);
     
