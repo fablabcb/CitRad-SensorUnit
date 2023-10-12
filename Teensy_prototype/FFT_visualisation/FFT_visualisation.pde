@@ -7,7 +7,7 @@ int yStart = 50;
 int xPos = xStart;         // horizontal position of the graph
 int speed = 0;
 int oldspeed = 0;
-int num_fft_bins = 511;
+int num_fft_bins = 150;
 float[] nums = new float[num_fft_bins+3];
 float mic_gain;
 float spec_speed = 0;
@@ -65,7 +65,7 @@ void windowResized() {
 
 void draw_axis () { 
   baseline = height-yStart;
-  img = createImage(1, num_fft_bins, RGB);
+  img = createImage(1, baseline, RGB);
   
   // axis
   stroke(#FFFFFF);
@@ -116,15 +116,20 @@ void draw () {
   img.loadPixels();
   int j = img.height-1;
   int k = 0;
-  for (int i = 0; i < num_fft_bins ; i++) {
-    float col = map(nums[k], 0, 500, 255, 0);
-    img.pixels[j] = color(col,col,col);
-    //img.pixels[j+1] = color(23,120,30);
-    
+  for (int i = 0; i < img.height ; i++) {
+    if(k > (num_fft_bins-1)){
+      img.pixels[j] = color(255,255,255);
+    }else{
+      
+      float col = map(nums[k], 120, 0, 255, 0);
+      img.pixels[j] = color(col,col,col);
+      //img.pixels[j+1] = color(23,120,30);
+    }
     j--;
     if(i%zoom==0){
       k++;
     }
+    
   }
   //img.pixels[img.height-1-(speed*zoom)-zoom/2] = color(200,20,40);
   img.updatePixels();
@@ -148,12 +153,12 @@ void draw () {
   //draw speed as text
   fill(255);
   stroke(255);
-  rect(width-220, 0, 220, 90); 
+  //rect(width-220, 0, 220, 90); 
   fill(#ff0000);
   textSize(104); 
   textAlign(RIGHT);
   //if(peak > 0.01){
-    text(round(speed*speed_conversion), width, 80);
+    //text(round(speed*speed_conversion), width, 80);
   //}
   if(peak >= 1.0){
     fill(#ff0000);

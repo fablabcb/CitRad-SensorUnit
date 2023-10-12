@@ -56,7 +56,7 @@ void setup() {
 
   fft1024.windowFunction(AudioWindowHanning1024);
   fft1024.setNAverage(1);
-  fft1024.setOutputType(FFT_RMS);   // FFT_RMS or FFT_POWER or FFT_DBFS
+  fft1024.setOutputType(FFT_DBFS);   // FFT_RMS or FFT_POWER or FFT_DBFS
 
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
@@ -95,12 +95,12 @@ void loop() {
   if(fft1024.available())
   {
     float* pointer = fft1024.getData();
-    for (int  kk=0; kk<512; kk++) saveDat[kk]= *(pointer + kk);
+    for (int  kk=0; kk<512; kk++) saveDat[kk]= -*(pointer + kk);
 
     // output spectrum
-    for(i = 0; i <= 511; i++)
+    for(i = 0; i <= 150; i++)
     {
-      Serial.print(saveDat[i], 0);
+      Serial.print(saveDat[i], 2);
 
       
       //Serial.write((byte*)&test, sizeof(test));
