@@ -7,7 +7,7 @@ int yStart = 50;
 int xPos = xStart;         // horizontal position of the graph
 int speed = 0;
 int oldspeed = 0;
-int num_fft_bins = 150;
+int num_fft_bins = 1023 ;
 float[] nums = new float[num_fft_bins+3];
 float mic_gain;
 float spec_speed = 0;
@@ -27,7 +27,7 @@ int step;
 
 
 void setup () {
-  size(1000, 561);
+  size(1000, 561+512);
   // set the window size:
   //size(displayWidth, displayHeight);
   //fullScreen();
@@ -45,7 +45,7 @@ void setup () {
   // I know that the first port in the serial list on my Mac is always my
   // Arduino, so I open Serial.list()[0].
   // Open whatever port is the one you're using.
-  myPort = new Serial(this, "/dev/tty.usbmodem142945601", 9600);
+  myPort = new Serial(this, "/dev/cu.usbmodem89083501", 9600);
 
   // don't generate a serialEvent() unless you get a newline character:
   myPort.bufferUntil('\n');
@@ -121,7 +121,7 @@ void draw () {
       img.pixels[j] = color(255,255,255);
     }else{
       
-      float col = map(nums[k], 120, 0, 255, 0);
+      float col = map(nums[k], 12, 0, 255, 0);
       img.pixels[j] = color(col,col,col);
       //img.pixels[j+1] = color(23,120,30);
     }

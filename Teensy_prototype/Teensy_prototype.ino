@@ -26,18 +26,19 @@ uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
 int input;
 int mic_gain = 16;
-float saveDat[512];
+float saveDat[1024];
 
-AudioAnalyzeFFT1024_F32      fft1024;      
+AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
 AudioAnalyzePeak_F32         peak1;          
 
-AudioInputI2S_F32            mic;           
+AudioInputI2S_F32            linein;           
 AudioOutputI2S_F32           headphone;           
 AudioControlSGTL5000         sgtl5000_1;     
-AudioConnection_F32          patchCord3(mic, 0, fft1024, 0);
-AudioConnection_F32          patchCord5(mic, 0, peak1, 0);
-AudioConnection_F32          patchCord6(mic, 0, headphone, 0);
-AudioConnection_F32          patchCord7(mic, 0, headphone, 1);
+AudioConnection_F32          patchCord3(linein, 0, fft_IQ1024, 0);
+AudioConnection_F32          patchCord4(linein, 1, fft_IQ1024, 1);
+AudioConnection_F32          patchCord5(linein, 0, peak1, 0);
+AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
+AudioConnection_F32          patchCord7(linein, 0, headphone, 1);
 
 
 void setup() {
@@ -54,9 +55,10 @@ void setup() {
   //sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
 
-  fft1024.windowFunction(AudioWindowHanning1024);
-  fft1024.setNAverage(1);
-  fft1024.setOutputType(FFT_DBFS);   // FFT_RMS or FFT_POWER or FFT_DBFS
+  fft_IQ1024.windowFunction(AudioWindowHanning1024);
+  fft_IQ1024.setNAverage(1);
+  fft_IQ1024.setOutputType(FFT_DBFS);   // FFT_RMS or FFT_POWER or FFT_DBFS
+  fft_IQ1024.setXAxis(3);
 
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
@@ -92,15 +94,15 @@ void loop() {
   // }
 
 
-  if(fft1024.available())
+  if(fft_IQ1024.available())
   {
-    float* pointer = fft1024.getData();
-    for (int  kk=0; kk<512; kk++) saveDat[kk]= -*(pointer + kk);
+    float* pointer = fft_IQ1024.getData();
+    for (int  kk=0; kk<1024; kk++) saveDat[kk]= -*(pointer + kk);
 
     // output spectrum
-    for(i = 0; i <= 150; i++)
+    for(i = 0; i < 1024; i++)
     {
-      Serial.print(saveDat[i], 2);
+      Serial.print(saveDat[i]/10, 0);
 
       
       //Serial.write((byte*)&test, sizeof(test));
