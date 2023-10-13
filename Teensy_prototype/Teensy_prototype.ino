@@ -20,13 +20,17 @@ void setI2SFreq(int freq) {
        | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
 }
 
-const int sample_rate = 44100;
+const int sample_rate = 12000;
 uint16_t max_amplitude;                   //highest signal in spectrum              
 uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
 int input;
-int mic_gain = 16;
+char command[1];
+uint8_t mic_gain = 16;
 float saveDat[512];
+bool send_output = false;
+float peak;
+uint16_t send_max_fft_bins = 514;
 
 AudioAnalyzeFFT1024_F32      fft1024;      
 AudioAnalyzePeak_F32         peak1;          
@@ -69,74 +73,53 @@ void loop() {
 
   if (Serial.available() > 0) {
     input = Serial.read();
-
-    if(input==0){
+    if((input==0) & (mic_gain > 0)){
       mic_gain--;
+      sgtl5000_1.micGain(mic_gain);
     }
-    if(input==1){
+    if((input==1) & (mic_gain<63)){
       mic_gain++;
+      sgtl5000_1.micGain(mic_gain);
+    }      
+
+    if(input==100){
+      send_output=true;
     }
-    mic_gain = max(0, min(63, mic_gain));
-    sgtl5000_1.micGain(mic_gain);
   }
 
   uint32_t i;
-  // uint16_t test[51];
-  // for(i = 0; i <= 50; i++){
-  //   if(i==10){
-  //     test[i] = 40;
-  //   }else{
-  //     test[i] = i;
-  //   }
-    
-  // }
 
-
-  if(fft1024.available())
+  if(fft1024.available() & send_output)
   {
+    //save fft result in variable
     float* pointer = fft1024.getData();
-    for (int  kk=0; kk<512; kk++) saveDat[kk]= -*(pointer + kk);
-
-    // output spectrum
-    for(i = 0; i <= 150; i++)
-    {
-      Serial.print(saveDat[i], 2);
-
-      
-      //Serial.write((byte*)&test, sizeof(test));
-
-      // Serial.write(lowByte(test));
-      // Serial.write(highByte(test));
-
-      Serial.print(",");
-    }
-                            
+    for (int kk=0; kk<512; kk++) saveDat[kk]= *(pointer + kk);
+    
+    Serial.write((byte*)&mic_gain, 1);
+         
     // detect highest frequency
     max_amplitude = 0;
     max_freq_Index = 0;
-
     for(i = 1; i < 512; i++) {    
       if ((saveDat[i] > 5) & (saveDat[i] > max_amplitude)) {
         max_amplitude = saveDat[i];        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
-    Serial.print(max_freq_Index);
-    Serial.print(",");
+    Serial.write((byte*)&max_freq_Index, 2);
+    
+    peak = peak1.read();
+    Serial.write((byte*)&peak, 4);
 
+    Serial.write((byte*)&send_max_fft_bins, 2);
 
-    // detect clipping / overall loudeness
-    if(peak1.available()){
-      //Serial.print(max_amplitude);
-      Serial.print(peak1.read());
-    }else{
-      Serial.print("");
+    // send spectrum
+    for(i = 0; i < send_max_fft_bins; i++)
+    {
+      Serial.write((byte*)&saveDat[i], 4);
     }
-    Serial.print(",");
-    Serial.print(mic_gain);
     
-    
-    Serial.println("");
+    send_output = false;
   }
 
 }
