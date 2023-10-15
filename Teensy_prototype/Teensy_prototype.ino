@@ -20,22 +20,31 @@ void setI2SFreq(int freq) {
        | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
 }
 
-const int sample_rate = 44100;
+const int sample_rate = 12000;
 uint16_t max_amplitude;                   //highest signal in spectrum              
 uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
 int input;
-int mic_gain = 16;
+char command[1];
+float mic_gain = 1.0;
 float saveDat[1024];
+bool send_output = false;
+float peak;
+uint16_t send_max_fft_bins = 800;
+uint16_t send_from = 100;
 
 AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
-AudioAnalyzePeak_F32         peak1;          
+AudioAnalyzePeak_F32         peak1;
+AudioEffectGain_F32          gain0;
+AudioEffectGain_F32          gain1;
 
 AudioInputI2S_F32            linein;           
 AudioOutputI2S_F32           headphone;           
 AudioControlSGTL5000         sgtl5000_1;     
-AudioConnection_F32          patchCord3(linein, 0, fft_IQ1024, 0);
-AudioConnection_F32          patchCord4(linein, 1, fft_IQ1024, 1);
+AudioConnection_F32          patchCord1(linein, 0, gain0, 0);
+AudioConnection_F32          patchCord2(gain0, 0, fft_IQ1024, 0); // I-channel
+AudioConnection_F32          patchCord3(linein, 1, gain1, 0);
+AudioConnection_F32          patchCord4(gain1,  0, fft_IQ1024, 1); // Q-channel
 AudioConnection_F32          patchCord5(linein, 0, peak1, 0);
 AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
 AudioConnection_F32          patchCord7(linein, 0, headphone, 1);
@@ -50,10 +59,12 @@ void setup() {
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
-  sgtl5000_1.inputSelect(AUDIO_INPUT_MIC); //AUDIO_INPUT_LINEIN
-  sgtl5000_1.micGain(mic_gain); 
-  //sgtl5000_1.lineInLevel(0);
+  sgtl5000_1.inputSelect(AUDIO_INPUT_LINEIN); //AUDIO_INPUT_LINEIN
+  sgtl5000_1.micGain(0); 
+  sgtl5000_1.lineInLevel(0);
   sgtl5000_1.volume(.5);
+  gain0.setGain(1);
+  gain1.setGain(mic_gain);
 
   fft_IQ1024.windowFunction(AudioWindowHanning1024);
   fft_IQ1024.setNAverage(1);
@@ -71,74 +82,53 @@ void loop() {
 
   if (Serial.available() > 0) {
     input = Serial.read();
+    if((input==0) & (mic_gain > 0.001)){
+      mic_gain=mic_gain-0.01;
+      gain1.setGain(mic_gain);
+    }
+    if((input==1) & (mic_gain<10)){
+      mic_gain=mic_gain+0.01;
+      gain1.setGain(mic_gain);
+    }      
 
-    if(input==0){
-      mic_gain--;
+    if(input==100){
+      send_output=true;
     }
-    if(input==1){
-      mic_gain++;
-    }
-    mic_gain = max(0, min(63, mic_gain));
-    sgtl5000_1.micGain(mic_gain);
   }
 
   uint32_t i;
-  // uint16_t test[51];
-  // for(i = 0; i <= 50; i++){
-  //   if(i==10){
-  //     test[i] = 40;
-  //   }else{
-  //     test[i] = i;
-  //   }
-    
-  // }
-
 
   if(fft_IQ1024.available())
   {
     float* pointer = fft_IQ1024.getData();
-    for (int  kk=0; kk<1024; kk++) saveDat[kk]= -*(pointer + kk);
-
-    // output spectrum
-    for(i = 0; i < 1024; i++)
-    {
-      Serial.print(saveDat[i]/10, 0);
-
-      
-      //Serial.write((byte*)&test, sizeof(test));
-
-      // Serial.write(lowByte(test));
-      // Serial.write(highByte(test));
-
-      Serial.print(",");
-    }
-                            
+    for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
+    
+    Serial.write((byte*)&mic_gain, 1);
+         
     // detect highest frequency
     max_amplitude = 0;
     max_freq_Index = 0;
-
-    for(i = 1; i < 512; i++) {    
+    for(i = 1; i < send_max_fft_bins; i++) {    
       if ((saveDat[i] > 5) & (saveDat[i] > max_amplitude)) {
         max_amplitude = saveDat[i];        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
-    Serial.print(max_freq_Index);
-    Serial.print(",");
+    Serial.write((byte*)&max_freq_Index, 2);
+    
+    peak = peak1.read();
+    Serial.write((byte*)&mic_gain, 4);
 
+    uint16_t number_send = send_max_fft_bins-send_from;
+    Serial.write((byte*)&(number_send), 2);
 
-    // detect clipping / overall loudeness
-    if(peak1.available()){
-      //Serial.print(max_amplitude);
-      Serial.print(peak1.read());
-    }else{
-      Serial.print("");
+    // send spectrum
+    for(i = send_from; i < send_max_fft_bins; i++)
+    {
+      Serial.write((byte*)&saveDat[i], 4);
     }
-    Serial.print(",");
-    Serial.print(mic_gain);
     
-    
-    Serial.println("");
+    send_output = false;
   }
 
 }
