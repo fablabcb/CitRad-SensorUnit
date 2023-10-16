@@ -28,10 +28,46 @@ Here a measurement closer to the street with cars traveling both directions:
 
 ## Wiring
 
-| PS-354           | Audio Board | Teensy |
+| IPS-354           | Audio Board | Teensy |
 | ---------------- | ----------- | ------ |
 | Pin 2 (enable)   | -           | Pin 22 |
 | Pin 3 (Vcc)      | -           | Vcc    |
 | Pin 4 (Gnd)      | Mic Gnd     | Gnd    |
 | Pin 5 (signal I) | Mic         | -      |
 
+## 32bit Audio Library
+
+To get better input resulution we use a 32bit audio library that was forked from the original Teensy Audio library:
+
+[OpenAudio_ArduinoLibrary](https://github.com/chipaudette/OpenAudio_ArduinoLibrary)
+
+Similar to the original audio library it has a Design tool:
+
+[OpenAudio_Design_Tool](http://www.janbob.com/electron/OpenAudio_Design_Tool/index.html)
+
+## Serial
+
+The teensy opens two serial connections over usb. The first one `Serial` is used for data transmission to the processing visualisation script. 
+The second one `SerialUSB1` is used for debugging.
+
+It is important to set the Arduino IDE to dual serial: "Tools > USB Type: Dual Serial".
+
+More infos under https://github.com/TeensyUser/doc/wiki/Serial and https://www.pjrc.com/teensy/td_serial.html
+
+## IQ FFT
+
+The 32bit audio library supports complex FFT calculation with I and Q channel. The [IPS-354](https://media.digikey.com/pdf/Data%20Sheets/InnoSenT/200730_Data%20Sheet_IPS-354_V1.5.pdf) sends 
+I and Q signals from which the direction of the radar signal can be derived. To record I and Q signal we have to use the linein input instead of the mic input. This has only 0-22dB gain 
+instead of up to 63dB gain on the mic input. But it offers two channels that we need for the IQ signal. The input sensitivity seems enough for the IPS-354. 
+
+We develop this type of data analysis in the [IQ-fft branch](https://github.com/fablabcb/CityRadar/tree/IQ-fft/Teensy_prototype). 
+
+The wiring is as follows:
+
+| IPS-354           | Audio Board | Teensy |
+| ---------------- | ----------- | ------ |
+| Pin 2 (enable)   | -           | Pin 22 |
+| Pin 3 (Vcc)      | -           | Vcc    |
+| Pin 4 (Gnd)      | Linein Gnd L| Gnd    |
+| Pin 5 (signal I) | Linein L    | -      |
+| Pin 6 (signal Q) | Linein R    | -      |

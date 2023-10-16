@@ -75,6 +75,7 @@ void setup() {
   digitalWrite(PIN_A8, LOW); 
 
   Serial.begin(9600);
+  SerialUSB1.begin(9600);
 }
 
 
@@ -130,6 +131,11 @@ void loop() {
     
     send_output = false;
   }
+  for(i = 0; i < 10; i++){
+      SerialUSB1.print(saveDat[i]);
+      SerialUSB1.print(",");
+  }
+  SerialUSB1.println();
 
 }
 
