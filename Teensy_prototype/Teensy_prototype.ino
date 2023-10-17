@@ -1,5 +1,6 @@
 #include <Audio.h>
 #include "OpenAudio_ArduinoLibrary.h"
+#include "AudioStream_F32.h"
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -20,7 +21,7 @@ void setI2SFreq(int freq) {
        | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
 }
 
-const int sample_rate = 12000;
+const int sample_rate = 44100;
 uint16_t max_amplitude;                   //highest signal in spectrum              
 uint16_t max_freq_Index;
 float speed_conversion = (sample_rate/1024)/44.0;
@@ -30,21 +31,29 @@ float mic_gain = 1.0;
 float saveDat[1024];
 bool send_output = false;
 float peak;
-uint16_t send_max_fft_bins = 800;
-uint16_t send_from = 100;
+uint16_t send_max_fft_bins = 700;
+uint16_t send_from = 200;
+
+// IQ calibration
+float alpha = 1.10;
+float psi = -0.04;
+float A, C, D;
 
 AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
 AudioAnalyzePeak_F32         peak1;
 AudioEffectGain_F32          gain0;
-AudioEffectGain_F32          gain1;
+AudioMixer4_F32              Q_mixer;
+
+
 
 AudioInputI2S_F32            linein;           
 AudioOutputI2S_F32           headphone;           
 AudioControlSGTL5000         sgtl5000_1;     
 AudioConnection_F32          patchCord1(linein, 0, gain0, 0);
 AudioConnection_F32          patchCord2(gain0, 0, fft_IQ1024, 0); // I-channel
-AudioConnection_F32          patchCord3(linein, 1, gain1, 0);
-AudioConnection_F32          patchCord4(gain1,  0, fft_IQ1024, 1); // Q-channel
+AudioConnection_F32          patchCord3(linein, 0, Q_mixer, 0); // I input
+AudioConnection_F32          patchCord3b(linein, 1, Q_mixer, 1); // Q input
+AudioConnection_F32          patchCord4(Q_mixer,  0, fft_IQ1024, 1); // Q-channel
 AudioConnection_F32          patchCord5(linein, 0, peak1, 0);
 AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
 AudioConnection_F32          patchCord7(linein, 0, headphone, 1);
@@ -55,17 +64,15 @@ void setup() {
 
   // Audio connections require memory to work.  For more
   // detailed information, see the MemoryAndCpuUsage example
-  AudioMemory_F32(60);
+  AudioMemory_F32(400);
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(AUDIO_INPUT_LINEIN); //AUDIO_INPUT_LINEIN
   sgtl5000_1.micGain(0); 
-  sgtl5000_1.lineInLevel(0);
+  sgtl5000_1.lineInLevel(15);
   sgtl5000_1.volume(.5);
   gain0.setGain(1);
-  gain1.setGain(mic_gain);
-
   fft_IQ1024.windowFunction(AudioWindowHanning1024);
   fft_IQ1024.setNAverage(1);
   fft_IQ1024.setOutputType(FFT_DBFS);   // FFT_RMS or FFT_POWER or FFT_DBFS
@@ -74,32 +81,53 @@ void setup() {
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
 
-  Serial.begin(9600);
-  SerialUSB1.begin(9600);
 }
 
 
 void loop() {
-
+  // control input from serial
   if (Serial.available() > 0) {
     input = Serial.read();
     if((input==0) & (mic_gain > 0.001)){
       mic_gain=mic_gain-0.01;
-      gain1.setGain(mic_gain);
     }
     if((input==1) & (mic_gain<10)){
       mic_gain=mic_gain+0.01;
-      gain1.setGain(mic_gain);
+      
     }      
 
     if(input==100){
       send_output=true;
     }
+    
+    if(input==111){ //o
+     alpha = alpha + 0.01;
+    }
+    if(input==108){ //l
+      alpha = alpha - 0.01;
+    }
+    if(input==105){ //i
+      psi=psi+0.01;
+    }
+    if(input==107){ //k
+      psi=psi-0.01;
+    }
+    SerialUSB1.print("alpha = ");
+    SerialUSB1.println(alpha);
+    SerialUSB1.print("psi = ");
+    SerialUSB1.println(psi);
+    A = 1/alpha;
+    C = -sin(psi)/(alpha*cos(psi));
+    D = 1/cos(psi);
+    gain0.setGain(A);
+    Q_mixer.gain(0, C);
+    Q_mixer.gain(1, D);
   }
 
+  //generate output
   uint32_t i;
 
-  if(fft_IQ1024.available())
+  if(fft_IQ1024.available() & send_output)
   {
     float* pointer = fft_IQ1024.getData();
     for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
@@ -118,7 +146,7 @@ void loop() {
     Serial.write((byte*)&max_freq_Index, 2);
     
     peak = peak1.read();
-    Serial.write((byte*)&mic_gain, 4);
+    Serial.write((byte*)&peak, 4);
 
     uint16_t number_send = send_max_fft_bins-send_from;
     Serial.write((byte*)&(number_send), 2);
@@ -131,11 +159,6 @@ void loop() {
     
     send_output = false;
   }
-  for(i = 0; i < 10; i++){
-      SerialUSB1.print(saveDat[i]);
-      SerialUSB1.print(",");
-  }
-  SerialUSB1.println();
 
 }
 

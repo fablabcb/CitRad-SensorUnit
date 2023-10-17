@@ -48,7 +48,7 @@ void setup () {
   // I know that the first port in the serial list on my Mac is always my
   // Arduino, so I open Serial.list()[0].
   // Open whatever port is the one you're using.
-  myPort = new Serial(this, Serial.list()[8], 9600);
+  myPort = new Serial(this, Serial.list()[9], 230400);
 
   // don't generate a serialEvent() unless you get a newline character:
   myPort.bufferUntil('\n');
@@ -233,13 +233,12 @@ void keyPressed() {
     output.flush();  // Writes the remaining data to the file
     output.close();  // Finishes the file
     exit();  // Stops the program
-  } else if (key == '+'){
-    myPort.write(1);
-    println("increasing mic gain");
-  } else if (key == '-'){
-    myPort.write(0);
-    println("decreasing mic gain");
+  } else {
+   myPort.write(key);
+   print("sending key");
+   println(key);
   }
+  
 }
 
 String timestamp() {
