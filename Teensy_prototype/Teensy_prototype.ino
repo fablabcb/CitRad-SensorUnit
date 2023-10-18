@@ -56,7 +56,7 @@ AudioConnection_F32          patchCord3b(linein, 1, Q_mixer, 1); // Q input
 AudioConnection_F32          patchCord4(Q_mixer,  0, fft_IQ1024, 1); // Q-channel
 AudioConnection_F32          patchCord5(linein, 0, peak1, 0);
 AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
-AudioConnection_F32          patchCord7(linein, 0, headphone, 1);
+AudioConnection_F32          patchCord7(linein, 1, headphone, 1);
 
 
 void setup() {
