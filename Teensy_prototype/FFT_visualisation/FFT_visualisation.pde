@@ -12,13 +12,13 @@ float spec_speed = 0;
 int sample_rate = 44100;
 float fft_bin_width = sample_rate/1024;
 float speed_conversion = fft_bin_width/44.0; //44100/1024/44; //1.578125;
-float max_frequency;
+float max_speed;
 
 String inString;
 float oldpeak = 0;
 int baseline;
 PImage img;
-int zoom = 0;
+int speed_cutoff = 10;
 int step;
 
 int[] num = new int[512];
@@ -88,9 +88,13 @@ void draw_axis () {
   line(xStart-1, 0, xStart-1, baseline);
   
   //get nice tick spacing
-  float max_frequency = (num_fft_bins*speed_conversion-zoom);
+  if(iq_graph){
+    max_speed= (num_fft_bins/2*speed_conversion-speed_cutoff);
+  }else{
+    max_speed = (num_fft_bins*speed_conversion-speed_cutoff);
+  }
   float tick;
-  float minimum = max_frequency / 20;
+  float minimum = max_speed / 20;
   float magnitude = pow(10, floor(log10(minimum)));
   float residual = minimum / magnitude;
   if(residual > 5){
@@ -110,14 +114,14 @@ void draw_axis () {
   /////////////////
   
   if(iq_graph){
-    axis_start = -max_frequency;
+    axis_start = -max_speed;
   }else{
     axis_start = 0;
   }
      
-  for(int s = 0; s < max_frequency; s=s+step){
+  for(int s = 0; s < max_speed; s=s+step){
     int tick_label = s;
-    float tick_position = map(tick_label, axis_start, max_frequency, baseline, 0);
+    float tick_position = map(tick_label, axis_start, max_speed, baseline, 0);
     line(xStart-10, tick_position, xStart-1, tick_position);
     fill(#ff0000);
     textSize(20);
@@ -126,9 +130,9 @@ void draw_axis () {
   }
   
   if(iq_graph){
-    for(int s = 0; s > -max_frequency; s=s-step){
+    for(int s = 0; s > -max_speed; s=s-step){
       int tick_label = s;
-      float tick_position = map(tick_label, axis_start, max_frequency, baseline, 0);
+      float tick_position = map(tick_label, axis_start, max_speed, baseline, 0);
       line(xStart-10, tick_position, xStart-1, tick_position);
       fill(#ff0000);
       textSize(20);
@@ -197,7 +201,7 @@ void draw () {
   //print(",max:");
   //print(max_fft);
   
-  //println();
+  println();
   
   oldpeak = oldpeak*0.999;
   
@@ -207,6 +211,12 @@ void draw () {
   
   
   //=========== draw waterfall spectrogramm =======================
+  
+  if(iq_graph){
+    max_speed= (num_fft_bins/2*speed_conversion-speed_cutoff);
+  }else{
+    max_speed = (num_fft_bins*speed_conversion-speed_cutoff);
+  }
   
   if(!axis_drawn){
     draw_axis();
@@ -218,8 +228,13 @@ void draw () {
   int i;
   int pixel;
   
+  
   for(pixel=0; pixel < img.height; pixel++){
-    i = int(map(pixel, 0, img.height-1, num_fft_bins-1-zoom, 0));
+    if(iq_graph){
+       i = int(map(pixel, 0, img.height-1, max_speed/speed_conversion+num_fft_bins/2-1, speed_cutoff/speed_conversion));
+    }else{
+       i = int(map(pixel, 0, img.height-1, max_speed/speed_conversion-1, 0));
+    }
     float col = map(nums[i], -190, 1, 255, 0);
     img.pixels[pixel] = color(col,col,col);
   }
@@ -230,7 +245,7 @@ void draw () {
   // draw the line:
   stroke(#ff0000);
   //if(peak>0.05){
-    //line(xPos-1, map(oldspeed, 0, (num_fft_bins/zoom), baseline, 0), xPos, map(speed, 0, num_fft_bins/zoom, baseline, 0));
+    //line(xPos-1, map(oldspeed, 0, (num_fft_bins-speed_cutoff), baseline, 0), xPos, map(speed, 0, num_fft_bins-speespeed_cutoffd_cutoff, baseline, 0));
   //}
 
   // at the edge of the screen, go back to the beginning:
@@ -267,11 +282,11 @@ void draw () {
 void keyPressed() {
   if (key == CODED) {
     if (keyCode == UP) {
-      zoom = min(zoom+10,480);
+      speed_cutoff = min(speed_cutoff+10,480);
       xPos = xStart;
       draw_axis();
     } else if (keyCode == DOWN) {
-      zoom = max(zoom-10, 0);
+      speed_cutoff = max(speed_cutoff-10, 0);
       xPos = xStart;
       draw_axis();
     }
