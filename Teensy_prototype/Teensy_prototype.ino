@@ -6,6 +6,11 @@
 #include <SD.h>
 #include <SerialFlash.h>
 #include <utility/imxrt_hw.h>
+#include <TimeLib.h>
+
+#define SDCARD_CS_PIN    10
+#define SDCARD_MOSI_PIN  7   // Teensy 4 ignores this, uses pin 11
+#define SDCARD_SCK_PIN   14  // Teensy 4 ignores this, uses pin 13
 
 void setI2SFreq(int freq) {
   // PLL between 27*24 = 648MHz und 54*24=1296MHz
@@ -31,8 +36,11 @@ float mic_gain = 1.0;
 float saveDat[1024];
 bool send_output = false;
 float peak;
-uint16_t send_max_fft_bins = 700;
-uint16_t send_from = 200;
+uint16_t send_max_fft_bins = 1024;
+uint16_t send_from = 0;
+File data_file;
+time_t timestamp;
+unsigned long time_millis;
 
 // IQ calibration
 float alpha = 1.10;
@@ -68,7 +76,7 @@ void setup() {
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
-  sgtl5000_1.inputSelect(AUDIO_INPUT_LINEIN); //AUDIO_INPUT_LINEIN
+  sgtl5000_1.inputSelect(AUDIO_INPUT_LINEIN); //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
   sgtl5000_1.micGain(0); 
   sgtl5000_1.lineInLevel(15);
   sgtl5000_1.volume(.5);
@@ -80,6 +88,24 @@ void setup() {
 
   pinMode(PIN_A8, OUTPUT);
   digitalWrite(PIN_A8, LOW); 
+
+  //============== SD card =============
+
+  // Configure SPI
+  SPI.setMOSI(SDCARD_MOSI_PIN);
+  SPI.setSCK(SDCARD_SCK_PIN);
+
+  if (!(SD.begin(SDCARD_CS_PIN))) {
+    Serial.println("Unable to access the SD card");
+  }
+  if (SD.exists("RECORD.BIN")) {
+    // The SD library writes new data to the end of the
+    // file, so to start a new recording, the old file
+    // must be deleted before new data is written.
+    SD.remove("RECORD.BIN");
+  }
+
+  data_file = SD.open("RECORD.BIN", FILE_WRITE);
 
 }
 
@@ -127,37 +153,50 @@ void loop() {
   //generate output
   uint32_t i;
 
-  if(fft_IQ1024.available() & send_output)
-  {
+  if(fft_IQ1024.available()){
     float* pointer = fft_IQ1024.getData();
     for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
     
-    Serial.write((byte*)&mic_gain, 1);
-         
-    // detect highest frequency
-    max_amplitude = 0;
-    max_freq_Index = 0;
-    for(i = 1; i < send_max_fft_bins; i++) {    
-      if ((saveDat[i] > 5) & (saveDat[i] > max_amplitude)) {
-        max_amplitude = saveDat[i];        //remember highest amplitude
-        max_freq_Index = i;                    //remember frequency index
+    // save data on sd card
+    if(SD.begin(SDCARD_CS_PIN)){
+      time_millis = millis();
+      timestamp = now();
+      data_file.write((byte*)&time_millis, 4);
+      data_file.write((byte*)pointer, 4*1024);
+      data_file.flush();
+      //data_file.close();
+    }
+
+    // send data via Serial
+    if(send_output){
+      Serial.write((byte*)&mic_gain, 1);
+
+      // detect highest frequency
+      max_amplitude = 0;
+      max_freq_Index = 0;
+      for(i = 1; i < send_max_fft_bins; i++) {
+        if ((saveDat[i] > 5) & (saveDat[i] > max_amplitude)) {
+          max_amplitude = saveDat[i];        //remember highest amplitude
+          max_freq_Index = i;                    //remember frequency index
+        }
       }
-    }
-    Serial.write((byte*)&max_freq_Index, 2);
-    
-    peak = peak1.read();
-    Serial.write((byte*)&peak, 4);
+      Serial.write((byte*)&max_freq_Index, 2);
 
-    uint16_t number_send = send_max_fft_bins-send_from;
-    Serial.write((byte*)&(number_send), 2);
+      peak = peak1.read();
+      Serial.write((byte*)&peak, 4);
 
-    // send spectrum
-    for(i = send_from; i < send_max_fft_bins; i++)
-    {
-      Serial.write((byte*)&saveDat[i], 4);
+      uint16_t number_send = send_max_fft_bins-send_from;
+      Serial.write((byte*)&(number_send), 2);
+
+      // send spectrum
+      for(i = send_from; i < send_max_fft_bins; i++)
+      {
+        Serial.write((byte*)&saveDat[i], 4);
+      }
+
+      send_output = false;
+
     }
-    
-    send_output = false;
   }
 
 }

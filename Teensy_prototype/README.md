@@ -73,3 +73,12 @@ The wiring is as follows:
 | Pin 4 (Gnd)      | Linein Gnd L| Gnd    |
 | Pin 5 (signal I) | Linein L    | -      |
 | Pin 6 (signal Q) | Linein R    | -      |
+
+## Writing to SD card
+
+The program writes FFT data to the SD card (if present). The format is one 32bit unsigned integer timestamp in milliseconds since the start of the program
+followed by 1024 times 32bit floats of the FFT bins in dBFS. This repeats for as long as the program was running.
+
+In general every 12 milliseconds one dataset is written. Sometimes there seem to be hookups where there is longer times between datasets (up to 100 milliseconds).
+
+The file `read_binary_file.R` shows how to read this dataset into R.
