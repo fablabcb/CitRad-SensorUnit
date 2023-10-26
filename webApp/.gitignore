@@ -1,0 +1,6 @@
+*.RData
+radar_db.db
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
