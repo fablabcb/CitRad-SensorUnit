@@ -79,6 +79,49 @@ The wiring is as follows:
 The program writes FFT data to the SD card (if present). The format is one 32bit unsigned integer timestamp in milliseconds since the start of the program
 followed by 1024 times 32bit floats of the FFT bins in dBFS. This repeats for as long as the program was running.
 
+At the beginning there is a file header containing:
+
+- file_version (uint 2 bytes)
+- timestamp (uint 4 bytes)
+- fft_bins (uint 2 bytes)
+- iq_measurement (bool 1 byte)
+- sample_rate (uint 2 bytes)
+
 In general every 12 milliseconds one dataset is written. Sometimes there seem to be hookups where there is longer times between datasets (up to 100 milliseconds).
 
 The file `read_binary_file.R` shows how to read this dataset into R.
+
+### SD noise problems
+
+At the moment writing to SD creates noise in the data.
+
+Some ideas how to tackle this:
+
+- Some ideas from here: [How-to-avoid-noise-when-writing-to-the-microSD](https://forum.pjrc.com/threads/25326-How-to-avoid-noise-when-writing-to-the-microSD)
+- change main clock speed -> didn't improve noise
+- change slew rate of the pins: https://www.pjrc.com/teensy/IMXRT1060RM_rev2.pdf#page=695 with `IOMUXC_SW_PAD_CTL_PAD_GPIO_B0_00 = 0b0000'0000'0000'0000'0001'0000'1011'0000;`
+- add condensators to buffer high Vcc demands
+  - 10kOhm to buffer sensor input voltage didn't help
+- use SD card of Teensy 4.1 instead of the audioshield. This itself doesn't improve. But maybe the SD pins to the audioboard should not be connected?
+- pause data aquisition while writing to SD
+
+## Real time clock
+
+To add correct timestamps to the stored data we use the internal real time clock (RTC) of the Teensy. A coin cell battery needs to be connected to the VBat input 
+to keep the internal RTC running. More on this here: [Teensy Time library explanation and examples](https://www.pjrc.com/teensy/td_libs_Time.html).
+
+The Teensy uses the [Arduino time library](https://playground.arduino.cc/Code/Time/). 
+Since at 44100 kHz we get a 1024 point FFT every 12 milliseconds a sub-second time resolution is needed.
+The [millis function](https://www.arduino.cc/reference/en/language/functions/time/millis/) gives back milliseconds since start of the processor and can
+complement the timestamp from the Time library. 
+
+TimeSerial example under `File > Examples > Time > TimeSerial` shows how to set the rtc time via serial input.
+Here is a forum Thread on [how to access the internal RTC in a Teensy 4.0](https://forum.pjrc.com/threads/60317-How-to-access-the-internal-RTC-in-a-Teensy-4-0).
+
+From the Linux command line you can set the clock on the Teensy with:
+
+```
+date -u +T%s > /dev/ttyACM0
+```
+The command sends the letter "T" followed by the current time. Replace `ttyACM0` with your serial device name. 
+`-u` sets the time as [Unix time](https://en.wikipedia.org/wiki/Unix_time). 
