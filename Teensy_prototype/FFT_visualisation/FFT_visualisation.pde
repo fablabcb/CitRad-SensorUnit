@@ -9,7 +9,7 @@ int speed = 0;
 int oldspeed = 0;
 int num_fft_bins;
 float spec_speed = 0;
-int sample_rate = 44100;
+int sample_rate = 12000;
 float fft_bin_width = sample_rate/1024;
 float speed_conversion = fft_bin_width/44.0; //44100/1024/44; //1.578125;
 float max_speed;

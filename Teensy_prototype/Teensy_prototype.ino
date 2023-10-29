@@ -8,8 +8,6 @@
 #include <utility/imxrt_hw.h>
 #include <TimeLib.h>
 
-
-
 // Audio shield SD card:
 #define SDCARD_CS_PIN    10
 #define SDCARD_MOSI_PIN  7   // Teensy 4 ignores this, uses pin 11
@@ -19,7 +17,6 @@
 // #define SDCARD_CS_PIN    BUILTIN_SDCARD
 // #define SDCARD_MOSI_PIN  11  // not actually used
 // #define SDCARD_SCK_PIN   13  // not actually used
-
 
 void setI2SFreq(int freq) {
   // PLL between 27*24 = 648MHz und 54*24=1296MHz
@@ -42,44 +39,40 @@ void printDigits(int digits){
     SerialUSB1.print('0');
   SerialUSB1.print(digits);
 }
-
+// configs:
 const uint16_t sample_rate = 12000;
+const uint8_t audio_input = AUDIO_INPUT_LINEIN; //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
+const uint8_t linein_level = 15; //only relevant if AUDIO_INPUT_LINEIN is used
+float mic_gain = 1.0; //only relevant if AUDIO_INPUT_MIC is used
+const float max_pedestrian_speed = 10.0;
+const bool iq_measurement = true;
+float send_max_speed = 100;
+bool write_sd = false;
+const bool write_8bit = true;
+const bool write_raw_data = true;
+const bool write_csv_table = false;
+
+//variables
+uint16_t send_num_fft_bins; // is calculated from sen_max_speed
 float max_amplitude;                   //highest signal in spectrum        
 uint16_t max_freq_Index;
 float mean_amplitude;   
-float speed_conversion = (sample_rate/1024)/44.0;
-float max_pedestrian_speed = 10.0;
+float speed_conversion = (sample_rate/1024.0)/44.0;
 uint16_t max_pedestrian_bin = int(max_pedestrian_speed/speed_conversion);
 float pedestrian_amplitude;
+uint16_t send_max_fft_bin = (uint16_t)min(512, int(send_max_speed/speed_conversion));
 int input;
 char command[1];
-float mic_gain = 1.0;
 float saveDat[1024];
-bool send_output = false;
 float peak;
-bool iq_measurement = true;
 uint16_t iq_offset;
-uint16_t send_max_fft_bins = 1024;
-uint16_t send_from;
+uint16_t send_min_fft_bin;
 File data_file;
 File csv_file;
 time_t timestamp;
+bool send_output = false;
 unsigned long time_millis;
 uint16_t file_version = 1;
-bool write_sd = false;
-bool write_8bit = true;
-int write_counter=0;
-bool write_raw_data = true;
-uint16_t discard_counter = 0;
-uint16_t discard_after_write = 0;
-
-uint16_t length_write_buffer = 1;
-unsigned long timestamps[100];
-float speeds[100];
-float strengths[100];
-float means_amplitude[100];
-float means_pedestrian_amplitudes[100];
-
 
 // IQ calibration
 float alpha = 1.10;
@@ -88,22 +81,22 @@ float A, C, D;
 
 AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
 AudioAnalyzePeak_F32         peak1;
-AudioEffectGain_F32          gain0;
+AudioEffectGain_F32          I_gain;
 AudioMixer4_F32              Q_mixer;
-
 
 AudioInputI2S_F32            linein;           
 AudioOutputI2S_F32           headphone;           
 AudioControlSGTL5000         sgtl5000_1;     
-AudioConnection_F32          patchCord1(linein, 1, gain0, 0);
-AudioConnection_F32          patchCord2(gain0, 0, fft_IQ1024, 0); // I-channel
-AudioConnection_F32          patchCord3(linein, 1, Q_mixer, 0); // I input
-AudioConnection_F32          patchCord3b(linein, 0, Q_mixer, 1); // Q input
-AudioConnection_F32          patchCord4(Q_mixer,  0, fft_IQ1024, 1); // Q-channel
+AudioConnection_F32          patchCord1(linein, 0, I_gain, 0);       // I_gain I input
+AudioConnection_F32          patchCord2(I_gain, 0, fft_IQ1024, 0);   // FFT I input
+
+AudioConnection_F32          patchCord3(linein, 0, Q_mixer, 0);      // Q-mixer I input
+AudioConnection_F32          patchCord3b(linein, 1, Q_mixer, 1);     // Q-mixer Q input 
+AudioConnection_F32          patchCord4(Q_mixer,  0, fft_IQ1024, 1); // FFT Q input
+
 AudioConnection_F32          patchCord5(linein, 0, peak1, 0);
 AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
 AudioConnection_F32          patchCord7(linein, 1, headphone, 1);
-
 
 void setup() {
   setI2SFreq(sample_rate);
@@ -114,11 +107,11 @@ void setup() {
 
   // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
-  sgtl5000_1.inputSelect(AUDIO_INPUT_LINEIN); //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
-  sgtl5000_1.micGain(0); //only relevant if AUDIO_INPUT_MIC is used
-  sgtl5000_1.lineInLevel(15); //only relevant if AUDIO_INPUT_LINEIN is used
+  sgtl5000_1.inputSelect(audio_input); //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
+  sgtl5000_1.micGain(mic_gain); //only relevant if AUDIO_INPUT_MIC is used
+  sgtl5000_1.lineInLevel(linein_level); //only relevant if AUDIO_INPUT_LINEIN is used
   sgtl5000_1.volume(.5);
-  gain0.setGain(1);
+  I_gain.setGain(1);
 
   fft_IQ1024.windowFunction(AudioWindowHanning1024);
   fft_IQ1024.setNAverage(1);
@@ -129,11 +122,15 @@ void setup() {
   digitalWrite(PIN_A4, LOW); 
 
   if(iq_measurement){
-    send_from = 1024-send_max_fft_bins;
     iq_offset = 512;
+    send_num_fft_bins = send_max_fft_bin * 2;
+    send_max_fft_bin = send_max_fft_bin+512;
+    send_min_fft_bin = (1024-send_max_fft_bin);
+    
   }else{
-    send_from = 0;
     iq_offset = 0;
+    send_min_fft_bin = 0;
+    send_num_fft_bins = send_max_fft_bin;
   }
 
   //============== SD card =============
@@ -150,26 +147,29 @@ void setup() {
   if (!(SD.begin(SDCARD_CS_PIN))) {
     Serial.println("Unable to access the SD card");
   }else{
-    if (SD.exists("RECORD.BIN")) {
-      // The SD library writes new data to the end of the
-      // file, so to start a new recording, the old file
-      // must be deleted before new data is written.
-      SD.remove("RECORD.BIN");
+    if(write_raw_data){
+      if (SD.exists("RECORD.BIN")) {
+        // The SD library writes new data to the end of the
+        // file, so to start a new recording, the old file
+        // must be deleted before new data is written.
+        SD.remove("RECORD.BIN");
+      }
+      data_file = SD.open("RECORD.BIN", FILE_WRITE);
+      data_file.write((byte*)&file_version, 2);
+      data_file.write((byte*)&timestamp, 4);
+      data_file.write((byte*)&send_num_fft_bins, 2);
+      data_file.write((byte*)&iq_measurement, 1);
+      data_file.write((byte*)&sample_rate, 2);
+      data_file.flush();
     }
-    data_file = SD.open("RECORD.BIN", FILE_WRITE);
-    data_file.write((byte*)&file_version, 2);
-    data_file.write((byte*)&timestamp, 4);
-    data_file.write((byte*)&send_max_fft_bins, 2);
-    data_file.write((byte*)&iq_measurement, 1);
-    data_file.write((byte*)&sample_rate, 2);
-    data_file.flush();
-
-    if(SD.exists("detections.csv")){
-      SD.remove("detections.csv");
+    if(write_csv_table){
+      if(SD.exists("detections.csv")){
+        SD.remove("detections.csv");
+      }
+      csv_file = SD.open("detections.csv", FILE_WRITE);
+      csv_file.println("timestamp, speed, strength, mean_amplitude, pedestrian_mean_amplitude");
+      csv_file.flush();
     }
-    csv_file = SD.open("detections.csv", FILE_WRITE);
-    csv_file.println("timestamp, speed, strength, mean_amplitude, pedestrian_mean_amplitude");
-    csv_file.flush();
     write_sd = true;
   }
 
@@ -214,10 +214,12 @@ void loop() {
       SerialUSB1.println(alpha);
       SerialUSB1.print("psi = ");
       SerialUSB1.println(psi);
+
+      //after https://www.faculty.ece.vt.edu/swe/argus/iqbal.pdf
       A = 1/alpha;
       C = -sin(psi)/(alpha*cos(psi));
       D = 1/cos(psi);
-      gain0.setGain(A);
+      I_gain.setGain(A);
       Q_mixer.gain(0, C);
       Q_mixer.gain(1, D);
     }
@@ -249,106 +251,84 @@ void loop() {
   uint32_t i;
 
   if(fft_IQ1024.available()){
-    if(discard_counter > 0){
-      SerialUSB1.println("discard this");
-      discard_counter--;
-    }else{
-      float* pointer = fft_IQ1024.getData();
-      for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
+    float* pointer = fft_IQ1024.getData();
+    for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
 
-      // detect highest frequency
-      max_amplitude = -200.0;
-      max_freq_Index = 0;
-      mean_amplitude = 0.0;
-      pedestrian_amplitude = 0.0;
+    // detect highest frequency
+    max_amplitude = -200.0;
+    max_freq_Index = 0;
+    mean_amplitude = 0.0;
+    pedestrian_amplitude = 0.0;
 
-      //detect pedestrian
-      for(i = 3+iq_offset; i < max_pedestrian_bin+iq_offset; i++){
-        pedestrian_amplitude = pedestrian_amplitude + saveDat[i];
+    //detect pedestrian
+    for(i = 3+iq_offset; i < max_pedestrian_bin+iq_offset; i++){
+      pedestrian_amplitude = pedestrian_amplitude + saveDat[i];
+    }
+    pedestrian_amplitude = pedestrian_amplitude/max_pedestrian_bin;
+    
+    for(i = (max_pedestrian_bin+1+iq_offset); i < send_max_fft_bin; i++) {
+      mean_amplitude = mean_amplitude + saveDat[i];
+      if (saveDat[i] > max_amplitude) {
+        max_amplitude = saveDat[i];        //remember highest amplitude
+        max_freq_Index = i;                    //remember frequency index
       }
-      pedestrian_amplitude = pedestrian_amplitude/max_pedestrian_bin;
-      
-      for(i = (max_pedestrian_bin+1+iq_offset); i < send_max_fft_bins; i++) {
-        mean_amplitude = mean_amplitude + saveDat[i];
-        if (saveDat[i] > max_amplitude) {
-          max_amplitude = saveDat[i];        //remember highest amplitude
-          max_freq_Index = i;                    //remember frequency index
-        }
-      }
-      mean_amplitude = mean_amplitude/(send_max_fft_bins-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
+    }
+    mean_amplitude = mean_amplitude/(send_max_fft_bin-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
 
-      
-      timestamps[write_counter] = millis();
-      speeds[write_counter] = (max_freq_Index-iq_offset)*speed_conversion;
-      strengths[write_counter] = max_amplitude;
-      means_amplitude[write_counter] = mean_amplitude;
-      means_pedestrian_amplitudes[write_counter] = pedestrian_amplitude;
-      
-      write_counter++;
-
-      if(write_counter >= length_write_buffer){
-        //write_sd = true;
-        write_counter = 0;
-      }else{
-        write_sd = false;
-      }
-
-      // save data on sd card
-      if(write_sd){
-        time_millis = millis();
-        if(write_raw_data){
-          if(write_8bit){
-            data_file.write((byte*)&time_millis, 4);
-            for(i = 0; i < 1024; i++){
-              data_file.write((uint8_t)-saveDat[i]);
-            }
-          }else{
-            data_file.write((byte*)&time_millis, 4);
-            data_file.write((byte*)pointer, 1024*4);
+    // save data on sd card
+    if(write_sd){
+      time_millis = millis();
+      if(write_raw_data){
+        if(write_8bit){
+          data_file.write((byte*)&time_millis, 4);
+          for(i = send_min_fft_bin; i < send_max_fft_bin; i++){
+            data_file.write((uint8_t)-saveDat[i]);
           }
-          data_file.flush();
+        }else{
+          data_file.write((byte*)&time_millis, 4);
+          for(i = send_min_fft_bin; i < send_max_fft_bin; i++){
+            data_file.write((byte*)&saveDat[i], 4);
+          }
         }
-        
-        for(i = 0; i < length_write_buffer; i++){
-          //csv_file.println("timestamp, speed, strength, mean_amplitude, pedestrian_amplitude");
-          csv_file.print(timestamps[i]);
-          csv_file.print(", ");
-          csv_file.print(speeds[i]);
-          csv_file.print(", ");
-          csv_file.print(strengths[i]);
-          csv_file.print(", ");
-          csv_file.print(means_amplitude[i]);
-          csv_file.print(", ");
-          csv_file.println(means_pedestrian_amplitudes[i]);
-        }
+        data_file.flush();
+      }
+      if(write_csv_table){
+        //"timestamp, speed, strength, mean_amplitude, pedestrian_amplitude"
+        csv_file.print(time_millis);
+        csv_file.print(", ");
+        csv_file.print((max_freq_Index-iq_offset)*speed_conversion);
+        csv_file.print(", ");
+        csv_file.print(max_amplitude);
+        csv_file.print(", ");
+        csv_file.print(mean_amplitude);
+        csv_file.print(", ");
+        csv_file.println(pedestrian_amplitude);
         csv_file.flush();
-        discard_counter = discard_after_write;
-
-        // SerialUSB1.print("csv sd write time: ");
-        // SerialUSB1.println(millis()-time_millis);
       }
 
-      // send data via Serial
-      if(send_output){
-        Serial.write((byte*)&mic_gain, 1);
+      // SerialUSB1.print("csv sd write time: ");
+      // SerialUSB1.println(millis()-time_millis);
+    }
 
-        
-        Serial.write((byte*)&max_freq_Index, 2);
+    // send data via Serial
+    if(Serial && send_output){
+      Serial.write((byte*)&mic_gain, 1);
 
-        peak = peak1.read();
-        Serial.write((byte*)&peak, 4);
+      
+      Serial.write((byte*)&max_freq_Index, 2);
 
-        uint16_t number_send = send_max_fft_bins-send_from;
-        Serial.write((byte*)&(number_send), 2);
+      peak = peak1.read();
+      Serial.write((byte*)&peak, 4);
 
-        // send spectrum
-        for(i = send_from; i < send_max_fft_bins; i++)
-        {
-          Serial.write((byte*)&saveDat[i], 4);
-        }
+      Serial.write((byte*)&(send_num_fft_bins), 2);
 
-        send_output = false;
+      // send spectrum
+      for(i = send_min_fft_bin; i < send_max_fft_bin; i++)
+      {
+        Serial.write((byte*)&saveDat[i], 4);
       }
+
+      send_output = false;
     }
   }
 }
