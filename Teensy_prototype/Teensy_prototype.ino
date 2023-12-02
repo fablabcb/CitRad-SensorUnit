@@ -10,8 +10,8 @@
 
 // Audio shield SD card:
 #define SDCARD_CS_PIN    10
-#define SDCARD_MOSI_PIN  7   // Teensy 4 ignores this, uses pin 11
-#define SDCARD_SCK_PIN   14  // Teensy 4 ignores this, uses pin 13
+#define SDCARD_MOSI_PIN  11   // Teensy 4 ignores this, uses pin 11
+#define SDCARD_SCK_PIN   13  // Teensy 4 ignores this, uses pin 13
 
 // builtin SD card:
 // #define SDCARD_CS_PIN    BUILTIN_SDCARD
@@ -46,17 +46,19 @@ const uint8_t linein_level = 15; //only relevant if AUDIO_INPUT_LINEIN is used
 float mic_gain = 1.0; //only relevant if AUDIO_INPUT_MIC is used
 const float max_pedestrian_speed = 10.0;
 const bool iq_measurement = true;
-float send_max_speed = 100;
+float send_max_speed = 500;
 bool write_sd = false;
 const bool write_8bit = true;
 const bool write_raw_data = true;
-const bool write_csv_table = false;
+const bool write_csv_table = true;
 
 //variables
 uint16_t send_num_fft_bins; // is calculated from sen_max_speed
 float max_amplitude;                   //highest signal in spectrum        
 uint16_t max_freq_Index;
-float mean_amplitude;   
+float mean_amplitude;
+float mean_amplitude_reverse;   
+int8_t direction;
 float speed_conversion = (sample_rate/1024.0)/44.0;
 uint16_t max_pedestrian_bin = int(max_pedestrian_speed/speed_conversion);
 float pedestrian_amplitude;
@@ -75,8 +77,8 @@ unsigned long time_millis;
 uint16_t file_version = 1;
 
 // IQ calibration
-float alpha = 1.10;
-float psi = -0.04;
+float alpha = 0.9; //1.10;
+float psi = 0.04; //-0.04;
 float A, C, D;
 
 AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
@@ -112,13 +114,19 @@ void setup() {
   sgtl5000_1.lineInLevel(linein_level); //only relevant if AUDIO_INPUT_LINEIN is used
   sgtl5000_1.volume(.5);
   I_gain.setGain(1);
+  A = 1/alpha;
+  C = -sin(psi)/(alpha*cos(psi));
+  D = 1/cos(psi);
+  I_gain.setGain(A);
+  Q_mixer.gain(0, C);
+  Q_mixer.gain(1, D);
 
   fft_IQ1024.windowFunction(AudioWindowHanning1024);
   fft_IQ1024.setNAverage(1);
   fft_IQ1024.setOutputType(FFT_DBFS);   // FFT_RMS or FFT_POWER or FFT_DBFS
   fft_IQ1024.setXAxis(3);
 
-  pinMode(PIN_A4, OUTPUT); //A3=17, A8=22, A4=18
+  pinMode(PIN_A3, OUTPUT); //A3=17, A8=22, A4=18
   digitalWrite(PIN_A4, LOW); 
 
   if(iq_measurement){
@@ -167,7 +175,7 @@ void setup() {
         SD.remove("detections.csv");
       }
       csv_file = SD.open("detections.csv", FILE_WRITE);
-      csv_file.println("timestamp, speed, strength, mean_amplitude, pedestrian_mean_amplitude");
+      csv_file.println("timestamp, speed, direction, strength, mean_amplitude, mean_amplitude_reverse, pedestrian_mean_amplitude");
       csv_file.flush();
     }
     write_sd = true;
@@ -258,7 +266,9 @@ void loop() {
     max_amplitude = -200.0;
     max_freq_Index = 0;
     mean_amplitude = 0.0;
+    mean_amplitude_reverse = 0.0;
     pedestrian_amplitude = 0.0;
+    direction = 1;
 
     //detect pedestrian
     for(i = 3+iq_offset; i < max_pedestrian_bin+iq_offset; i++){
@@ -268,12 +278,24 @@ void loop() {
     
     for(i = (max_pedestrian_bin+1+iq_offset); i < send_max_fft_bin; i++) {
       mean_amplitude = mean_amplitude + saveDat[i];
-      if (saveDat[i] > max_amplitude) {
-        max_amplitude = saveDat[i];        //remember highest amplitude
+      mean_amplitude_reverse = mean_amplitude_reverse + saveDat[1024-i];
+      if (max(saveDat[i], saveDat[1024-i]) > max_amplitude) {
+        max_amplitude = max(saveDat[i], saveDat[1024-i]);        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
+    if(iq_measurement){
+      if(saveDat[max_freq_Index] > saveDat[1024-max_freq_Index]){
+        direction = 1;
+      }else{
+        direction = -1;
+      }
+    }
+        
     mean_amplitude = mean_amplitude/(send_max_fft_bin-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
+    mean_amplitude_reverse = mean_amplitude_reverse/(send_max_fft_bin-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
+
+
 
     // save data on sd card
     if(write_sd){
@@ -293,14 +315,17 @@ void loop() {
         data_file.flush();
       }
       if(write_csv_table){
-        //"timestamp, speed, strength, mean_amplitude, pedestrian_amplitude"
         csv_file.print(time_millis);
         csv_file.print(", ");
         csv_file.print((max_freq_Index-iq_offset)*speed_conversion);
         csv_file.print(", ");
+        csv_file.print(direction);
+        csv_file.print(", ");
         csv_file.print(max_amplitude);
         csv_file.print(", ");
         csv_file.print(mean_amplitude);
+        csv_file.print(", ");
+        csv_file.print(mean_amplitude_reverse);
         csv_file.print(", ");
         csv_file.println(pedestrian_amplitude);
         csv_file.flush();
