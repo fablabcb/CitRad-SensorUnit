@@ -7,6 +7,8 @@
 #include <SerialFlash.h>
 #include <utility/imxrt_hw.h>
 #include <TimeLib.h>
+#include "noise_floor.h"
+#include "functions.h"
 
 // Audio shield SD card:
 #define SDCARD_CS_PIN    10
@@ -18,27 +20,9 @@
 // #define SDCARD_MOSI_PIN  11  // not actually used
 // #define SDCARD_SCK_PIN   13  // not actually used
 
-void setI2SFreq(int freq) {
-  // PLL between 27*24 = 648MHz und 54*24=1296MHz
-  int n1 = 4; //SAI prescaler 4 => (n1*n2) = multiple of 4
-  int n2 = 1 + (24000000 * 27) / (freq * 256 * n1);
-  double C = ((double)freq * 256 * n1 * n2) / 24000000;
-  int c0 = C;
-  int c2 = 10000;
-  int c1 = C * c2 - (c0 * c2);
-  set_audioClock(c0, c1, c2, true);
-  CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK))
-       | CCM_CS1CDR_SAI1_CLK_PRED(n1-1) // &0x07
-       | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
-}
 
-void printDigits(int digits){
-  // utility function for digital clock display: prints preceding colon and leading 0
-  SerialUSB1.print(":");
-  if(digits < 10)
-    SerialUSB1.print('0');
-  SerialUSB1.print(digits);
-}
+
+
 // configs:
 const uint16_t sample_rate = 12000;
 const uint8_t audio_input = AUDIO_INPUT_LINEIN; //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
@@ -51,8 +35,17 @@ bool write_sd = false;
 const bool write_8bit = true;
 const bool write_raw_data = true;
 const bool write_csv_table = true;
+float mean_amplitude_trigger_threshold;
+float mean_amplitude_reverse_trigger_threshold = mean_amplitude_trigger_threshold;
+float mean_amplitude_trigger_wait_time;
+float noise_floor_distance_threshold = 8; //dB
+uint8_t bins_with_signal;
+uint8_t bins_with_signal_reverse;
 
 //variables
+char file_name_bin[30];
+char file_name_csv[30];
+float noise_floor_distance[1024];
 uint16_t send_num_fft_bins; // is calculated from sen_max_speed
 float max_amplitude;                   //highest signal in spectrum        
 uint16_t max_freq_Index;
@@ -77,8 +70,8 @@ unsigned long time_millis;
 uint16_t file_version = 1;
 
 // IQ calibration
-float alpha = 0.9; //1.10;
-float psi = 0.04; //-0.04;
+float alpha = 1.10;
+float psi = -0.04;
 float A, C, D;
 
 AudioAnalyzeFFT1024_IQ_F32   fft_IQ1024;      
@@ -101,6 +94,7 @@ AudioConnection_F32          patchCord6(linein, 0, headphone, 0);
 AudioConnection_F32          patchCord7(linein, 1, headphone, 1);
 
 void setup() {
+  setSyncProvider(getTeensy3Time);
   setI2SFreq(sample_rate);
 
   // Audio connections require memory to work.  For more
@@ -151,18 +145,14 @@ void setup() {
   //timestamp = now();
   timestamp = Teensy3Clock.get();
   setTime(timestamp);
+  sprintf(file_name_bin, "rawdata_%0d-%0d-%0d_%0d-%0d-%0d.BIN", year(), month(), day(), hour(), minute(), second()); 
+  sprintf(file_name_csv, "metrics_%0d-%0d-%0d_%0d-%0d-%0d.csv", year(), month(), day(), hour(), minute(), second()); 
 
   if (!(SD.begin(SDCARD_CS_PIN))) {
     Serial.println("Unable to access the SD card");
   }else{
     if(write_raw_data){
-      if (SD.exists("RECORD.BIN")) {
-        // The SD library writes new data to the end of the
-        // file, so to start a new recording, the old file
-        // must be deleted before new data is written.
-        SD.remove("RECORD.BIN");
-      }
-      data_file = SD.open("RECORD.BIN", FILE_WRITE);
+      data_file = SD.open(file_name_bin, FILE_WRITE);
       data_file.write((byte*)&file_version, 2);
       data_file.write((byte*)&timestamp, 4);
       data_file.write((byte*)&send_num_fft_bins, 2);
@@ -171,11 +161,8 @@ void setup() {
       data_file.flush();
     }
     if(write_csv_table){
-      if(SD.exists("detections.csv")){
-        SD.remove("detections.csv");
-      }
-      csv_file = SD.open("detections.csv", FILE_WRITE);
-      csv_file.println("timestamp, speed, direction, strength, mean_amplitude, mean_amplitude_reverse, pedestrian_mean_amplitude");
+      csv_file = SD.open(file_name_csv, FILE_WRITE);
+      csv_file.println("timestamp, speed, direction, strength, mean_amplitude, mean_amplitude_reverse, bins_with_signal, bins_with_signal_reverse, pedestrian_mean_amplitude");
       csv_file.flush();
     }
     write_sd = true;
@@ -269,23 +256,35 @@ void loop() {
     mean_amplitude_reverse = 0.0;
     pedestrian_amplitude = 0.0;
     direction = 1;
+    bins_with_signal = 0;
+    bins_with_signal_reverse = 0;
 
     //detect pedestrian
     for(i = 3+iq_offset; i < max_pedestrian_bin+iq_offset; i++){
       pedestrian_amplitude = pedestrian_amplitude + saveDat[i];
     }
     pedestrian_amplitude = pedestrian_amplitude/max_pedestrian_bin;
+
+    for(i = 0; i < 1024; i++){
+      noise_floor_distance[i] = saveDat[i] - noise_floor[i];
+    }
     
     for(i = (max_pedestrian_bin+1+iq_offset); i < send_max_fft_bin; i++) {
-      mean_amplitude = mean_amplitude + saveDat[i];
-      mean_amplitude_reverse = mean_amplitude_reverse + saveDat[1024-i];
-      if (max(saveDat[i], saveDat[1024-i]) > max_amplitude) {
-        max_amplitude = max(saveDat[i], saveDat[1024-i]);        //remember highest amplitude
+      mean_amplitude = mean_amplitude + noise_floor_distance[i];
+      if(noise_floor_distance[i] > noise_floor_distance_threshold){
+        bins_with_signal++;
+      }
+      mean_amplitude_reverse = mean_amplitude_reverse + noise_floor_distance[1024-i];
+      if(noise_floor_distance[1024-i] > noise_floor_distance_threshold){
+        bins_with_signal_reverse++;
+      }
+      if (max(noise_floor_distance[i], noise_floor_distance[1024-i]) > max_amplitude) {
+        max_amplitude = max(noise_floor_distance[i], noise_floor_distance[1024-i]);        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
     }
     if(iq_measurement){
-      if(saveDat[max_freq_Index] > saveDat[1024-max_freq_Index]){
+      if(noise_floor_distance[max_freq_Index] > noise_floor_distance[1024-max_freq_Index]){
         direction = 1;
       }else{
         direction = -1;
@@ -327,6 +326,10 @@ void loop() {
         csv_file.print(", ");
         csv_file.print(mean_amplitude_reverse);
         csv_file.print(", ");
+        csv_file.print(bins_with_signal);
+        csv_file.print(", ");
+        csv_file.print(bins_with_signal_reverse);
+        csv_file.print(", ");
         csv_file.println(pedestrian_amplitude);
         csv_file.flush();
       }
@@ -350,7 +353,7 @@ void loop() {
       // send spectrum
       for(i = send_min_fft_bin; i < send_max_fft_bin; i++)
       {
-        Serial.write((byte*)&saveDat[i], 4);
+        Serial.write((byte*)&noise_floor_distance[i], 4);
       }
 
       send_output = false;
@@ -358,4 +361,7 @@ void loop() {
   }
 }
 
-
+time_t getTeensy3Time()
+{
+  return Teensy3Clock.get();
+}

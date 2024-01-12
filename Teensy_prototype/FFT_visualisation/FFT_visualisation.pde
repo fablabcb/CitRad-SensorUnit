@@ -18,7 +18,7 @@ String inString;
 float oldpeak = 0;
 int baseline;
 PImage img;
-int speed_cutoff = 10;
+int speed_cutoff = 0;
 int step;
 
 int[] num = new int[512];
@@ -235,7 +235,7 @@ void draw () {
     }else{
        i = int(map(pixel, 0, img.height-1, max_speed/speed_conversion-1, 0));
     }
-    float col = map(nums[i], -120, 1, 255, 0);
+    float col = map(nums[i], 4, 80, 255, 0);
     img.pixels[pixel] = color(col,col,col);
   }
   
