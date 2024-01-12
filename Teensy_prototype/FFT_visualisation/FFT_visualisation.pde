@@ -12,14 +12,13 @@ float spec_speed = 0;
 int sample_rate = 12000;
 float fft_bin_width = sample_rate/1024;
 float speed_conversion = fft_bin_width/44.0; //44100/1024/44; //1.578125;
-int max_frequency = 100;
+float max_speed;
 
 String inString;
 float oldpeak = 0;
 int baseline;
 PImage img;
-int window_height = num_fft_bins+yStart;
-int zoom = 1;
+int speed_cutoff = 0;
 int step;
 
 int[] num = new int[512];
@@ -30,38 +29,55 @@ int peak_int;
 float peak;
 float min_fft = 0;
 float max_fft = 0;
-int start_sequence; 
+int start_sequence;
+boolean axis_drawn = false;
+boolean iq_graph = true;
+float axis_start;
+
+float log10 (float x) {
+  return (log(x) / log(10));
+}
 
 
 void setup () {
-  size(1000, 561);
+  size(1400, 561);
   // set the window size:
   //size(displayWidth, displayHeight);
   //fullScreen();
   
-  windowResizable(false);
+  windowResizable(true);
   
   // List all the available serial ports
   // if using Processing 2.1 or later, use Serial.printArray()
   println(Serial.list());
-  myPort = new Serial(this, Serial.list()[8], 9600);
+
+  // I know that the first port in the serial list on my Mac is always my
+  // Arduino, so I open Serial.list()[0].
+  // Open whatever port is the one you're using.
+  myPort = new Serial(this, Serial.list()[9], 230400);
+
+  // don't generate a serialEvent() unless you get a newline character:
+  myPort.bufferUntil('\n');
+
 
   //create file to write to
   output = createWriter( "recorded_data/radar_data_" + timestamp() + ".csv" );
 
   // set initial background:
   background(255);
-  
-  draw_axis(); 
 }
 
 void windowResized() {
-  draw_axis();
+  xPos = xStart;
+  axis_drawn= false;
 }
 
 void draw_axis () { 
   baseline = height-yStart;
   img = createImage(1, baseline, RGB);
+  
+  
+  
   
   // axis
   stroke(#FFFFFF);
@@ -70,31 +86,75 @@ void draw_axis () {
   
   stroke(#ff0000);
   line(xStart-1, 0, xStart-1, baseline);
-  if(zoom>=4){
-    step=5;
+  
+  //get nice tick spacing
+  if(iq_graph){
+    max_speed= (num_fft_bins/2*speed_conversion-speed_cutoff);
   }else{
-    step=20;
+    max_speed = (num_fft_bins*speed_conversion-speed_cutoff);
   }
-  if(zoom>=18){
-    step=1;
+  float tick;
+  float minimum = max_speed / 20;
+  float magnitude = pow(10, floor(log10(minimum)));
+  float residual = minimum / magnitude;
+  if(residual > 5){
+    tick = 10 * magnitude;
+  }else{
+    if(residual > 2){
+       tick = 5 * magnitude;
+    }else{
+      if(residual > 1){
+        tick = 2 * magnitude;
+      }else{
+        tick = magnitude;
+      }
+    }
+  }
+  step = int(tick);
+  /////////////////
+  
+  if(iq_graph){
+    axis_start = -max_speed;
+  }else{
+    axis_start = 0;
   }
      
-  for(int s =0; s < 1000; s=s+step){
+  for(int s = 0; s < max_speed; s=s+step){
     int tick_label = s;
-    float tick_position = map(tick_label/speed_conversion, 0, num_fft_bins/zoom, baseline, 0);
+    float tick_position = map(tick_label, axis_start, max_speed, baseline, 0);
     line(xStart-10, tick_position, xStart-1, tick_position);
     fill(#ff0000);
     textSize(20);
     textAlign(RIGHT,CENTER);
     text(tick_label, xStart-13, tick_position-5);
   }
+  
+  if(iq_graph){
+    for(int s = 0; s > -max_speed; s=s-step){
+      int tick_label = s;
+      float tick_position = map(tick_label, axis_start, max_speed, baseline, 0);
+      line(xStart-10, tick_position, xStart-1, tick_position);
+      fill(#ff0000);
+      textSize(20);
+      textAlign(RIGHT,CENTER);
+      text(tick_label, xStart-13, tick_position-5);
+    }
+  }
+  
   textAlign(CENTER, CENTER);
   translate(10, baseline/2);
   rotate(radians(-90));
   text("Geschwindigkeit (km/h)", 0, 0);
+  
+  rotate(radians(90));
+  translate(-10,-baseline/2);
+
 }
 
 void draw () {
+  
+  //================== read data from serial =============================
+  
   oldspeed = speed;
   myPort.clear();
   myPort.write("d");
@@ -103,23 +163,23 @@ void draw () {
     delay(1);
   }
 
-  print("mic_gain:");
+  //print("mic_gain:");
   mic_gain = (myPort.read());
-  print(mic_gain);
+  //print(mic_gain);
   
-  print(", max_freq_index:");
+  //print(", max_freq_index:");
   max_freq_Index = (myPort.read()) + (myPort.read()<<8);
   speed = max_freq_Index;
-  print(max_freq_Index);
+  //print(max_freq_Index);
   
-  print(", peak:");
+  //print(", peak:");
   peak_int = myPort.read() + (myPort.read()<<8) + (myPort.read()<<16) + (myPort.read()<<24);
   peak = Float.intBitsToFloat(peak_int);
-  print(round(peak*100)/100.0);
+  //print(round(peak*100)/100.0);
   
-  print(", numfft:");
+  //print(", numfft:");
   num_fft_bins = (myPort.read()) + (myPort.read()<<8);
-  print(num_fft_bins);
+  //print(num_fft_bins);
   
   int[] nums_int = new int[num_fft_bins];
   float[] nums = new float[num_fft_bins];
@@ -136,10 +196,10 @@ void draw () {
       //print(nums[i]);
   }
   
-  print(",min:");
-  print(min_fft);
-  print(",max:");
-  print(max_fft);
+  //print(",min:");
+  //print(min_fft);
+  //print(",max:");
+  //print(max_fft);
   
   println();
   
@@ -148,32 +208,44 @@ void draw () {
   // write to data file
   output.print(inString);
   
-  // draw waterfall spectrogramm
+  
+  
+  //=========== draw waterfall spectrogramm =======================
+  
+  if(iq_graph){
+    max_speed= (num_fft_bins/2*speed_conversion-speed_cutoff);
+  }else{
+    max_speed = (num_fft_bins*speed_conversion-speed_cutoff);
+  }
+  
+  if(!axis_drawn){
+    draw_axis();
+    axis_drawn = true;
+  }
+  
   img.loadPixels();
   int j = img.height-1;
-  int k = 0;
-  for (int i = 0; i < img.height ; i++) {
-    if(k > (num_fft_bins-1)){
-      img.pixels[j] = color(255,255,255);
+  int i;
+  int pixel;
+  
+  
+  for(pixel=0; pixel < img.height; pixel++){
+    if(iq_graph){
+       i = int(map(pixel, 0, img.height-1, max_speed/speed_conversion+num_fft_bins/2-1, speed_cutoff/speed_conversion));
     }else{
-      float col = map(nums[k], -190, 1, 255, 0);
-      img.pixels[j] = color(col,col,col);
-      //img.pixels[j+1] = color(23,120,30);
+       i = int(map(pixel, 0, img.height-1, max_speed/speed_conversion-1, 0));
     }
-    j--;
-    if(i%zoom==0){
-      k++;
-    }
-    
+    float col = map(nums[i], 4, 80, 255, 0);
+    img.pixels[pixel] = color(col,col,col);
   }
-  //img.pixels[img.height-1-(speed*zoom)-zoom/2] = color(200,20,40);
+  
   img.updatePixels();
   image(img, xPos,0);
   
   // draw the line:
   stroke(#ff0000);
   //if(peak>0.05){
-    //line(xPos-1, map(oldspeed, 0, (num_fft_bins/zoom), baseline, 0), xPos, map(speed, 0, num_fft_bins/zoom, baseline, 0));
+    //line(xPos-1, map(oldspeed, 0, (num_fft_bins-speed_cutoff), baseline, 0), xPos, map(speed, 0, num_fft_bins-speespeed_cutoffd_cutoff, baseline, 0));
   //}
 
   // at the edge of the screen, go back to the beginning:
@@ -210,12 +282,15 @@ void draw () {
 void keyPressed() {
   if (key == CODED) {
     if (keyCode == UP) {
-      zoom = min(zoom+1,100);
+      speed_cutoff = min(speed_cutoff+10,480);
+      xPos = xStart;
       draw_axis();
     } else if (keyCode == DOWN) {
-      zoom = max(zoom-1, 1);
+      speed_cutoff = max(speed_cutoff-10, 0);
+      xPos = xStart;
       draw_axis();
     }
+
   } else if (key == 's') {
     String filename = "screenshots/radar_spectrum_" + timestamp() + ".png"; 
     println(filename);
@@ -224,13 +299,12 @@ void keyPressed() {
     output.flush();  // Writes the remaining data to the file
     output.close();  // Finishes the file
     exit();  // Stops the program
-  } else if (key == '+'){
-    myPort.write(1);
-    println("increasing mic gain");
-  } else if (key == '-'){
-    myPort.write(0);
-    println("decreasing mic gain");
+  } else {
+   myPort.write(key);
+   print("sending key");
+   println(key);
   }
+  
 }
 
 String timestamp() {
