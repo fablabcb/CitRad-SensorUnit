@@ -1,3 +1,0 @@
-(fp_lib_table
-  (lib (name "radaramp_footprints")(type "KiCad")(uri "${KIPRJMOD}/lib/radaramp_footprints.pretty")(options "")(descr ""))
-)
