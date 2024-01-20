@@ -24,50 +24,61 @@
 
 
 // configs:
-const uint16_t sample_rate = 12000;
+const uint16_t sample_rate = 12000;  // Hz; sample rate of data acquisition
 const uint8_t audio_input = AUDIO_INPUT_LINEIN; //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
 const uint8_t linein_level = 15; //only relevant if AUDIO_INPUT_LINEIN is used
 float mic_gain = 1.0; //only relevant if AUDIO_INPUT_MIC is used
-const float max_pedestrian_speed = 10.0;
-const bool iq_measurement = true;
-float send_max_speed = 500;
-bool write_sd = false;
-const bool write_8bit = true;
-const bool write_raw_data = true;
-const bool write_csv_table = true;
-float mean_amplitude_trigger_threshold;
-float mean_amplitude_reverse_trigger_threshold = mean_amplitude_trigger_threshold;
-float mean_amplitude_trigger_wait_time;
-float noise_floor_distance_threshold = 8; //dB
-uint8_t bins_with_signal;
-uint8_t bins_with_signal_reverse;
+const float max_pedestrian_speed = 10.0; // m/s; speed under which signals are detected as pedestrians
+const bool iq_measurement = true;   // measure in both directions?
+const float send_max_speed = 500;         // don't send (and store) spectral data higher than this speed
+bool write_sd = false;              // write data to SD card?
+const bool write_8bit = true;       // write data as 8bit binary (to save disk space)
+const bool write_raw_data = true;   // write raw spectral data to SD?
+const bool write_csv_table = true;  // write calculated metrix to csv table?
+const float noise_floor_distance_threshold = 8; //dB; distance of "proper signal" to noise floor
+const float TRIGGER_AMPLITUDE = 100;  // trigger threshold for mean amplitude to signify a car passing by
+const long COOL_DOWN_PERIOD = 1000;   // cool down period for trigger signal in milliseconds
 
 //variables
 char file_name_bin[30];
 char file_name_csv[30];
 float noise_floor_distance[1024];
-uint16_t send_num_fft_bins; // is calculated from sen_max_speed
-float max_amplitude;                   //highest signal in spectrum        
-uint16_t max_freq_Index;
-float mean_amplitude;
+uint16_t send_num_fft_bins;   // is calculated from send_max_speed
+float max_amplitude;          // highest signal in spectrum        
+float max_amplitude_reverse;  // highest signal in spectrum reverse direction
+uint16_t max_freq_Index;      // index of highest signal in spectrum
+uint16_t max_freq_Index_reverse; // index of highest signal in spectrum reverse direction
+float detected_speed;         // speed in m/s based on peak frequency
+float max_detected_speed;     // maximum speed of a passing car
+float detected_speed_reverse; // speed in m/s based on peak frequency reverse direction
+float mean_amplitude;         // mean amplitude in spectrum used to detect cars passing by the sensor
 float mean_amplitude_reverse;   
-int8_t direction;
-float speed_conversion = (sample_rate/1024.0)/44.0;
-uint16_t max_pedestrian_bin = int(max_pedestrian_speed/speed_conversion);
-float pedestrian_amplitude;
+uint8_t bins_with_signal;     // how many bins have signal over the noise threshold?
+uint8_t bins_with_signal_reverse;
+float speed_conversion = (sample_rate/1024.0)/44.0;  // conversion from Hz to m/s
+uint16_t max_pedestrian_bin = int(max_pedestrian_speed/speed_conversion);  // convert max_pedestrian_speed to bin
+float pedestrian_amplitude;   // used to detect the presence of a pedestrians
 uint16_t send_max_fft_bin = (uint16_t)min(512, int(send_max_speed/speed_conversion));
-int input;
-char command[1];
-float saveDat[1024];
-float peak;
-uint16_t iq_offset;
+bool trigger = false;         // trigger variable
+bool measuring_max;           // activated to measure max speed
+bool signal;                  // is there a signal present?
+bool stop_measuring_max;      // activated to stop searching for max speed (in case of signal loss)
+unsigned long trigger_time = 0;  // time when trigger was set
+int input;                    // serial input
+char command[1];              // serial command
+float spectrum[1024];         // spectral data
+float peak;                   // highest peak-to-peak distance of the signal (if >= 1 clipping occurs)
+uint16_t iq_offset;           // offset used for IQ calculation
 uint16_t send_min_fft_bin;
-File data_file;
-File csv_file;
-time_t timestamp;
-bool send_output = false;
-unsigned long time_millis;
-uint16_t file_version = 1;
+File data_file;               // file for raw data
+File csv_file;                // file for metrics as csv
+time_t timestamp;             // time stamp for saved data
+bool send_output = false;     // send output over serial?
+unsigned long time_millis;    // elapsed time since start of sensor in milliseconds
+uint16_t file_version = 1.1;  // file version of the output
+unsigned long pctime;
+const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
+uint32_t i;                   // used for loops
 
 // IQ calibration
 float alpha = 1.10;
@@ -101,7 +112,6 @@ void setup() {
   // detailed information, see the MemoryAndCpuUsage example
   AudioMemory_F32(400);
 
-  // Enable the audio shield, select input, and enable output
   sgtl5000_1.enable();
   sgtl5000_1.inputSelect(audio_input); //AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
   sgtl5000_1.micGain(mic_gain); //only relevant if AUDIO_INPUT_MIC is used
@@ -219,9 +229,6 @@ void loop() {
       Q_mixer.gain(1, D);
     }
 
-    unsigned long pctime;
-    const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
-
     if(input==84) { //T for time
       pctime = Serial.parseInt();
       if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
@@ -243,11 +250,10 @@ void loop() {
   }
 
   //generate output
-  uint32_t i;
 
   if(fft_IQ1024.available()){
     float* pointer = fft_IQ1024.getData();
-    for (int  kk=0; kk<1024; kk++) saveDat[kk]= *(pointer + kk);
+    for (int  kk=0; kk<1024; kk++) spectrum[kk]= *(pointer + kk);
 
     // detect highest frequency
     max_amplitude = -200.0;
@@ -261,12 +267,12 @@ void loop() {
 
     //detect pedestrian
     for(i = 3+iq_offset; i < max_pedestrian_bin+iq_offset; i++){
-      pedestrian_amplitude = pedestrian_amplitude + saveDat[i];
+      pedestrian_amplitude = pedestrian_amplitude + spectrum[i];
     }
     pedestrian_amplitude = pedestrian_amplitude/max_pedestrian_bin;
 
     for(i = 0; i < 1024; i++){
-      noise_floor_distance[i] = saveDat[i] - noise_floor[i];
+      noise_floor_distance[i] = spectrum[i] - noise_floor[i];
     }
     
     for(i = (max_pedestrian_bin+1+iq_offset); i < send_max_fft_bin; i++) {
@@ -278,18 +284,18 @@ void loop() {
       if(noise_floor_distance[1024-i] > noise_floor_distance_threshold){
         bins_with_signal_reverse++;
       }
-      if (max(noise_floor_distance[i], noise_floor_distance[1024-i]) > max_amplitude) {
-        max_amplitude = max(noise_floor_distance[i], noise_floor_distance[1024-i]);        //remember highest amplitude
+      // with noise_floor_distance[i] > noise_floor_distance[1024-i] make shure that the signal is in the right direction
+      if (noise_floor_distance[i] > noise_floor_distance[1024-i] && noise_floor_distance[i] > max_amplitude) {
+        max_amplitude = noise_floor_distance[i];        //remember highest amplitude
         max_freq_Index = i;                    //remember frequency index
       }
-    }
-    if(iq_measurement){
-      if(noise_floor_distance[max_freq_Index] > noise_floor_distance[1024-max_freq_Index]){
-        direction = 1;
-      }else{
-        direction = -1;
+      if (noise_floor_distance[1024-i] > noise_floor_distance[i] && noise_floor_distance[1024-i] > max_amplitude) {
+        max_amplitude_reverse = noise_floor_distance[1024-i];        //remember highest amplitude
+        max_freq_Index_reverse = i;                    //remember frequency index
       }
     }
+    detected_speed = (max_freq_Index-iq_offset)*speed_conversion;
+    detected_speed_reverse = (max_freq_Index_reverse-iq_offset)*speed_conversion;
         
     mean_amplitude = mean_amplitude/(send_max_fft_bin-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
     mean_amplitude_reverse = mean_amplitude_reverse/(send_max_fft_bin-(max_pedestrian_bin+1+iq_offset)); // TODO: is this valid when working with dB values?
@@ -303,12 +309,12 @@ void loop() {
         if(write_8bit){
           data_file.write((byte*)&time_millis, 4);
           for(i = send_min_fft_bin; i < send_max_fft_bin; i++){
-            data_file.write((uint8_t)-saveDat[i]);
+            data_file.write((uint8_t)-spectrum[i]);
           }
         }else{
           data_file.write((byte*)&time_millis, 4);
           for(i = send_min_fft_bin; i < send_max_fft_bin; i++){
-            data_file.write((byte*)&saveDat[i], 4);
+            data_file.write((byte*)&spectrum[i], 4);
           }
         }
         data_file.flush();
@@ -316,9 +322,11 @@ void loop() {
       if(write_csv_table){
         csv_file.print(time_millis);
         csv_file.print(", ");
-        csv_file.print((max_freq_Index-iq_offset)*speed_conversion);
+        csv_file.print(detected_speed);
         csv_file.print(", ");
-        csv_file.print(direction);
+        csv_file.print(detected_speed_reverse);
+        csv_file.print(", ");
+        csv_file.print(max_amplitude);
         csv_file.print(", ");
         csv_file.print(max_amplitude);
         csv_file.print(", ");
@@ -361,7 +369,4 @@ void loop() {
   }
 }
 
-time_t getTeensy3Time()
-{
-  return Teensy3Clock.get();
-}
+

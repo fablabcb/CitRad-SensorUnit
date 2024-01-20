@@ -30,3 +30,8 @@ void printDigits(int digits){
     SerialUSB1.print('0');
   SerialUSB1.print(digits);
 }
+
+time_t getTeensy3Time()
+{
+  return Teensy3Clock.get();
+}
