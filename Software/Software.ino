@@ -172,7 +172,7 @@ void setup() {
     }
     if(write_csv_table){
       csv_file = SD.open(file_name_csv, FILE_WRITE);
-      csv_file.println("timestamp, speed, direction, strength, mean_amplitude, mean_amplitude_reverse, bins_with_signal, bins_with_signal_reverse, pedestrian_mean_amplitude");
+      csv_file.println("timestamp, speed, speed_reverse, strength, strength_reverse, mean_amplitude, mean_amplitude_reverse, bins_with_signal, bins_with_signal_reverse, pedestrian_mean_amplitude");
       csv_file.flush();
     }
     write_sd = true;
@@ -261,7 +261,6 @@ void loop() {
     mean_amplitude = 0.0;
     mean_amplitude_reverse = 0.0;
     pedestrian_amplitude = 0.0;
-    direction = 1;
     bins_with_signal = 0;
     bins_with_signal_reverse = 0;
 
@@ -328,7 +327,7 @@ void loop() {
         csv_file.print(", ");
         csv_file.print(max_amplitude);
         csv_file.print(", ");
-        csv_file.print(max_amplitude);
+        csv_file.print(max_amplitude_reverse);
         csv_file.print(", ");
         csv_file.print(mean_amplitude);
         csv_file.print(", ");
