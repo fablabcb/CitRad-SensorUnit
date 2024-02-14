@@ -67,6 +67,8 @@ unsigned long trigger_time = 0;  // time when trigger was set
 int input;                    // serial input
 char command[1];              // serial command
 float spectrum[1024];         // spectral data
+float spectrum_smoothed[1024]={0};  //smoothed spectral data for noise floor
+int smooth_n=1000;              // number of samples used for smoothing the spectrum
 float peak;                   // highest peak-to-peak distance of the signal (if >= 1 clipping occurs)
 uint16_t iq_offset;           // offset used for IQ calculation
 uint16_t send_min_fft_bin;
@@ -254,6 +256,11 @@ void loop() {
   if(fft_IQ1024.available()){
     float* pointer = fft_IQ1024.getData();
     for (int  kk=0; kk<1024; kk++) spectrum[kk]= *(pointer + kk);
+
+    for (i = 0; i < 1024; i++) {
+      spectrum_smoothed[i] = ((smooth_n-1)*spectrum_smoothed[i] + spectrum[i])/smooth_n;
+    }
+    noise_floor = spectrum_smoothed;
 
     // detect highest frequency
     max_amplitude = -200.0;
