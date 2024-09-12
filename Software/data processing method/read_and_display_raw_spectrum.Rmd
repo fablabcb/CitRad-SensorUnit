@@ -1,0 +1,134 @@
+---
+title: CitRad - read and display raw spectrum data
+---
+
+```{r knitr settings, echo=F, include=F}
+knitr::opts_chunk$set(echo=T, cache=F, warning =F, message = F, error = F)
+```
+
+Load the necessary libraries:
+
+```{r libraries and helper functions}
+library(plyr)
+library(dplyr)
+library(viridis)
+library(lubridate)
+source("functions.R")
+source("noise_floor_data.R")
+```
+
+
+## read data
+
+To read the raw data use the `read_binary_file_8bit()` function located in `functions.R`. 
+
+```{r read data, results='hide'}
+filename <- "../../../data/SD-Card/2024-03-29_Nordring/rawdata_2024-3-29_12-8-50.BIN"
+data_list <- read_binary_file_8bit(filename)
+#rm(data, file_version, iq_measurement, n, num_fft_bins, size, start_time, timestamps, sample_rate)
+attach(data_list)
+```
+
+The `attach()` command puts all variables in data_list in the global environment.
+
+
+## conversion between frequency and speed
+
+The FFT bins go from 1 to 1024. Bin 512 is 0 km/h. The upper bins represent positive speeds, lower bins negative speed (movement in the opposite direction). The conversion factor between frequency and speed is the following:
+
+$$\frac{sample\_rate}{1024}/44.0 \approx 0.266$$
+with $sample\_rate = `r sample_rate`$
+
+
+```{r speed conversion, echo=T}
+speed_conversion = (sample_rate/1024)/44.0
+speeds <- (1:1024-512) * speed_conversion
+```
+
+In preparation for the plots we also do some timestamp conversion:
+
+```{r timestamp conversion}
+timestamps_date <- start_time + milliseconds(timestamps)
+timestamp_minutes = timestamps/1000/60
+```
+
+# plot spectrum
+
+```{r plot with timestamp}
+index <- 19585+0:1000
+image(timestamp_minutes[index], speeds,  data[index,], col=magma(100), main="spectrum")
+```
+
+To speed up the generation of the spectrum plot (especially for large timeframes) we can use the option `useRaster = T`:
+
+
+```{r plot faster with index}
+image(index, speeds,  data[index,], col=magma(100), useRaster = T, main="spectrum")
+```
+
+Since `useRaster` needs a regular x-axis we can't use the timestamp, since that one is a bit irregular depending on the processing speed of the Teensy:
+
+```{r timestamp irregularities}
+diff(timestamps) %>% unique %>% sort
+```
+
+To add back some sensible x-axis:
+
+```{r plot with tick labels}
+tick_positions <- seq(min(index), max(index), length.out=10)
+tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
+  format("%Y-%m-%d\n%H:%M:%S %Z") %>% paste(., "\n", round(tick_positions))
+
+image(index, speeds,  data[index,], col=magma(100), useRaster = T, xaxt="n", xlab="", main="spectrum")
+axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
+```
+
+We can also limit the speeds to the expected range and add some grid lines:
+
+```{r speed selection and grid lines}
+speed_selection <- which(abs(speeds)<=70)
+image(index, speeds[speed_selection],  data[index,speed_selection], col=magma(100), useRaster = T, xaxt="n", xlab="", main="spectrum")
+axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
+abline(h=-7:7*10)
+```
+
+# store the plot to a file:
+
+We create a graphics folder first:
+
+```{r create graphics folder}
+dir.create("Grafiken")
+```
+
+And then render a graphic for the whole timeline into a png file:
+
+```{r export png}
+system.time({ # tells us the processing time it took
+  
+# calculate pixel width with 200 pixels per minute:
+timerange_minutes <- diff(range(timestamp_minutes))
+pixel_width <-  round(timerange_minutes) * 200
+
+# pepare axis with 1 tick per minute:
+index <- 1:length(timestamps)
+tick_positions <- seq(min(index), max(index), length.out=timerange_minutes)
+tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
+  format("%Y-%m-%d\n%H:%M:%S %Z") %>% paste(., "\n", round(tick_positions))
+
+
+filename = paste0("./Grafiken/", as.numeric(Sys.time()), ".png")
+# open graphic device:
+png(filename, height = 500, width = pixel_width)
+
+# create graphic
+image(index, speeds[speed_selection],  data[index,speed_selection], col=magma(100), useRaster = T, xaxt="n", xlab="", main="spectrum")
+axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
+abline(h=-7:7*10)
+
+# close graphic device
+dev.off()
+
+})
+```
+
+In my experience the fastest way to display big spectrum image files is in the browser (like Firefox or Chrome).
