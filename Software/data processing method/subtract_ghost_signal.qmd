@@ -1,0 +1,193 @@
+---
+title: Citrad - tests to subtract ghost signal
+format: 
+  revealjs:
+    css: style.css
+    auto-stretch: false
+    
+output: 
+  revealjs::revealjs_presentation:
+    code_folding: hide
+---
+
+
+## ghost signal
+
+Whenever the sensor detects a forward signal it also detects a signal in the opposite direction. Mirroring and subtracting the spectrum is one approach to deal with this. It seemed to work for the measurements we made at BTU location. But doesn't work at the Nordring location. There might be differences in the Q-I balance settings between those measurements. This has still to be validated.
+
+```{r knitr settings, echo=T, include=F}
+knitr::opts_chunk$set(echo=F, cache=F, warning =F, message = F, error = F)
+```
+
+```{r libraries}
+library(plyr)
+library(dplyr)
+library(dygraphs)
+library(viridis)
+library(lubridate)
+
+source("functions.R")
+```
+
+# BTU
+
+```{r read BTU data, results="hide"}
+filename <- "../../../data/SD-Card/2023-12-07/rawdata_2023-12-6_19-41-12.BIN"
+data_list <- read_binary_file_8bit(filename)
+attach(data_list)
+timestamps_date <- start_time + milliseconds(timestamps)
+timestamp_minutes = timestamps/1000/60
+speed_conversion = (sample_rate/1024)/44.0
+speeds <- (1:1024-512) * speed_conversion
+```
+
+## spectrum
+
+```{r BTU plot with different subtractions, fig.subcap="The signal looks mirrored around 0, but the ghost signal on the opposite side is a bit weaker. This timeframe actually contains 3 Targets (one in opposite direction)."}
+s = 971000
+index <- 971000 + 0:1000
+
+image(index, speeds,  data[index,], col=magma(100), useRaster = T, family="Arial")
+```
+
+## spectrum - 50% mirror
+
+```{r BTU plot with different subtractions 2, fig.subcap="Subtracting 50% of the mirrored spectrum removes a lot of the oscillating noise patterns and some of the ghost reverse signals."}
+image(index, speeds,  data[index,]-.5*data[index,c(1023:1,1)], col=magma(100), useRaster = T, family="Arial")
+```
+
+## spectrum - 100% mirror
+
+```{r BTU plot with different subtractions 3, fig.subcap="This seems to remove nearly all noise. The ghost signal now has negative values. Additionally the line around 0 km/h disappears and values are around 0."}
+image(index, speeds,  data[index,]-1*data[index,c(1023:1,1)], col=magma(100), useRaster = T, family="Arial")
+```
+
+## spectrum - 100% mirror, <0 set to 0
+
+```{r BTU plot with different subtractions 4, fig.subcap="Removing all negative values leaves only the signal clearly highlighted. But some noise spikes are pretty bright."}
+mirror_subtracted <- (data[index,]-1*data[index,c(1023:1,1)])
+
+mirror_subtracted[mirror_subtracted<0] = 0
+
+image(index, speeds, mirror_subtracted , col=magma(100), zlim=c(0,30), useRaster = T, family="Arial")
+```
+
+
+```{r BTU export png, eval=F, echo=F}
+system.time({ # tells us the processing time it took
+  
+index <- 4*226104+1:226104
+# calculate pixel width with 200 pixels per minute:
+timerange_minutes <- diff(range(timestamp_minutes[index]))
+pixel_width <-  round(timerange_minutes) * 200
+
+# pepare axis with 1 tick per minute:
+tick_positions <- seq(min(index), max(index), length.out=timerange_minutes)
+tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
+  format("%Y-%m-%d\n%H:%M:%S %Z") %>% paste(., "\n", round(tick_positions))
+
+speed_selection <- which(abs(speeds)<=70)
+
+filename = paste0("./Grafiken/BTU_", as.numeric(Sys.time()), ".png")
+# open graphic device:
+png(filename, height = 500, width = pixel_width)
+
+# create graphic
+image(index, speeds,  data[index,] - data[index,c(1023:1,1)], col=magma(100), useRaster = T, xaxt="n", xlab="", main="BTU")
+axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
+#abline(h=-7:7*10)
+
+# close graphic device
+dev.off()
+
+})
+```
+
+```{r, echo=F}
+detach(data_list)
+rm(data_list)
+```
+
+# Nordring
+
+```{r read Nordring data, results="hide"}
+filename <- "../../../data/SD-Card/2024-03-29_Nordring/rawdata_2024-3-29_12-8-50.BIN"
+data_list <- read_binary_file_8bit(filename)
+#rm(data, file_version, iq_measurement, n, num_fft_bins, size, start_time, timestamps, sample_rate)
+attach(data_list)
+timestamps_date <- start_time + milliseconds(timestamps)
+timestamp_minutes = timestamps/1000/60
+```
+
+```{r calc speeds}
+speed_conversion = (sample_rate/1024)/44.0
+speeds <- (1:1024-512) * speed_conversion
+```
+
+## spectrum
+
+```{r Nordring plot with different subtractions, fig.subcap="Multiple targets in this time window."}
+index <- 19585+0:1000
+spectrum_mirror_subtracted <- data[index,] - .5*data[index,c(1023:1,1)]
+
+image(index, speeds,  data[index,], col=magma(100), useRaster = T)
+```
+
+## spectrum - 50% mirrored
+
+```{r Nordring plot with different subtractions2, fig.subcap="Subtracting with 50% of the mirrored spectrum removes some of the ghost reverse signals, but also makes the real signal weaker in relation to the noise (noise gets brigther)."}
+image(index, speeds,  spectrum_mirror_subtracted, col=magma(100), useRaster = T)
+```
+
+## spectrum - 100% mirrored
+
+```{r Nordring plot with different subtractions3, fig.subcap="Subtracting with 100% of the mirrored spectrum hides the signal completely."}
+spectrum_mirror_subtracted <- data[index,] - 1*data[index,c(1023:1,1)]
+image(index, speeds,  spectrum_mirror_subtracted, col=magma(100), useRaster = T)
+```
+
+## spectrum - 100% mirrored, < 0 set to 0
+
+```{r Nordring plot with different subtractions4, fig.subcap="no signal visible"}
+spectrum_mirror_subtracted <- data[index,] - 1*data[index,c(1023:1,1)]
+spectrum_mirror_subtracted[spectrum_mirror_subtracted<0] = 0
+image(index, speeds,  spectrum_mirror_subtracted, col=magma(100), useRaster = T)
+```
+
+
+```{r Nordring export png, eval=F, echo=F}
+system.time({ # tells us the processing time it took
+  
+# calculate pixel width with 200 pixels per minute:
+timerange_minutes <- diff(range(timestamp_minutes))
+pixel_width <-  round(timerange_minutes) * 200
+
+# pepare axis with 1 tick per minute:
+index <- 1:length(timestamps)
+tick_positions <- seq(min(index), max(index), length.out=timerange_minutes)
+tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
+  format("%Y-%m-%d\n%H:%M:%S %Z") %>% paste(., "\n", round(tick_positions))
+
+
+filename = paste0("./Grafiken/Nordring_", as.numeric(Sys.time()), ".png")
+# open graphic device:
+png(filename, height = 500, width = pixel_width)
+
+# create graphic
+image(index, speeds,  data[index,], col=magma(100), useRaster = T, xaxt="n", xlab="", main="Nordring")
+axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
+#abline(h=-7:7*10)
+
+# close graphic device
+dev.off()
+
+})
+```
+
+```{r detach, results="hide"}
+detach(data_list)
+rm(data_list)
+```
+
+
+

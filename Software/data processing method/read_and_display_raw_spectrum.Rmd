@@ -14,7 +14,6 @@ library(dplyr)
 library(viridis)
 library(lubridate)
 source("functions.R")
-source("noise_floor_data.R")
 ```
 
 
@@ -92,7 +91,7 @@ axis(1, tick_positions, tick_labels, mgp=c(4, 2.5, 0))
 abline(h=-7:7*10)
 ```
 
-# store the plot to a file:
+# write plot to file:
 
 We create a graphics folder first:
 
@@ -130,5 +129,7 @@ dev.off()
 
 })
 ```
+
+
 
 In my experience the fastest way to display big spectrum image files is in the browser (like Firefox or Chrome).

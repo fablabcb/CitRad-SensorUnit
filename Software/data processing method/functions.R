@@ -39,7 +39,7 @@ simple_runmean <- function(x, n){
   return(runmean)
 }
 
-read_binary_file_8bit <- function(filename){
+read_binary_file_8bit <- function(filename, progress=F){
   size <- file.size(filename)
   con <- file(filename, open = "rb")
   # read file header:
@@ -61,7 +61,7 @@ read_binary_file_8bit <- function(filename){
   for(i in 1:n){
     timestamps[i] <- readBin(con, "integer", n=1, size=4)
     data[i,] <- -readBin(con, "integer", n=num_fft_bins, size=1, signed = F)
-    cat(round(i/n,2), "\r")
+    if(progress) cat(round(i/n,2), "\r")
   }
   close(con)
   return(list(data=data, timestamps=timestamps, size=size, n=n, file_version=file_version, start_time=start_time, num_fft_bins=num_fft_bins, sample_rate=sample_rate,

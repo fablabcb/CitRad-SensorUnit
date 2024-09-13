@@ -3,3 +3,6 @@ Tests/*
 *.jpg
 *.png
 *.pdf
+.Rproj.user
+*_cache
+*_files
