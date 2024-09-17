@@ -54,7 +54,7 @@ void setup () {
   // I know that the first port in the serial list on my Mac is always my
   // Arduino, so I open Serial.list()[0].
   // Open whatever port is the one you're using.
-  myPort = new Serial(this, Serial.list()[9], 230400);
+  myPort = new Serial(this, Serial.list()[0], 230400);
 
   // don't generate a serialEvent() unless you get a newline character:
   myPort.bufferUntil('\n');

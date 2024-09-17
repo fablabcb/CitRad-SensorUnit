@@ -1,1 +1,0 @@
-extern const float noise_floor[1024];
