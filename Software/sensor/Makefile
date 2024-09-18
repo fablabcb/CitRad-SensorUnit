@@ -24,7 +24,7 @@ help:
 
 .PHONY: build
 build:
-	arduino-cli compile --jobs 8 --build-path $(BUILD_DIR_ARD) --build-cache-path /tmp/arduino --fqbn $(BOARD) -v .
+	arduino-cli compile --jobs 8 --build-path $(BUILD_DIR_ARD) --build-cache-path /tmp/arduino --fqbn $(BOARD) -v . && echo "Build OK"
 
 .PHONY: deploy
 deploy: build

@@ -3,6 +3,9 @@
 
 #include "AudioSystem.h"
 
+#include <cstddef>
+#include <string>
+
 struct Config
 {
     AudioSystem::Config audio;
@@ -16,6 +19,14 @@ struct Config
     const bool write8bit = true;         // write data as 8bit binary (to save disk space)
     const bool writeRawData = true;      // write raw spectral data to SD?
     const bool writeCsvData = true;      // write calculated metrix to csv table?
+
+    const bool splitLargeFiles = true;     // if true, the raw and csv files will be split after each given timespan
+    const size_t maxSecondsPerFile = 3600; // used if splitLargeFiles is true
+    const String filePrefix;               // file name prefix (containing id and stuff)
+
+    Config()
+        : filePrefix("test_unit_")
+    {}
 };
 
 #endif

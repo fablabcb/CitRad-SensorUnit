@@ -62,6 +62,7 @@ void AudioSystem::processData(Results& results)
     results.maxBinIndex = this->maxBinIndex;
     results.minBinIndex = this->minBinIndex;
     results.max_pedestrian_bin = this->max_pedestrian_bin;
+    results.numberOfFftBins = this->numberOfFftBins;
 
     results.process(pointer, iq_offset, config.noise_floor_distance_threshold, speedConversion);
 }

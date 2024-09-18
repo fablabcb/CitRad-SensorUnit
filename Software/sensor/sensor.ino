@@ -15,6 +15,8 @@ Config config;
 FileWriter fileWriter;
 SerialIO serialIO;
 
+bool canWriteData = false;
+
 void setup()
 {
     setSyncProvider(getTeensy3Time);
@@ -34,26 +36,43 @@ void setup()
         setTime(timestamp);
     }
 
-    fileWriter.setup();
-    if(not fileWriter.canWriteToSd())
+    // wait max 5s for serial connection
     {
-        Serial.println("Unable to access the SD card");
+        Serial.begin(9600);
+        int counter = 5;
+        while(counter > 0 && !Serial)
+        {
+            delay(1000);
+            counter--;
+        }
+        Serial.println("Hello Citizen Radar");
+    }
+
+    fileWriter.setupSpi();
+
+    if(fileWriter.setupSdCard())
+    {
+        canWriteData = true;
+        Serial.println("SD card initialized");
     }
     else
-    {
-        if(config.writeRawData)
-            fileWriter.writeRawHeader(
-                audio.getNumberOfFftBins(),
-                config.audio.iq_measurement,
-                config.audio.sample_rate);
-
-        if(config.writeCsvData)
-            fileWriter.writeCsvHeader();
-    }
+        Serial.println("Unable to access the SD card");
 }
 
 void loop()
 {
+    if(not canWriteData)
+    {
+        if(fileWriter.setupSdCard())
+        {
+            canWriteData = true;
+            Serial.println("SD card initialized");
+        }
+
+        delay(1000);
+        return;
+    }
+
     if(not audio.hasData())
     {
         delay(1);
@@ -77,10 +96,10 @@ void loop()
     if(config.writeDataToSdCard)
     {
         if(config.writeRawData)
-            fileWriter.writeRawData(audioResults, config.write8bit);
+            fileWriter.writeRawData(audioResults, config.write8bit, config);
 
         if(config.writeCsvData)
-            fileWriter.writeCsvData(audioResults);
+            fileWriter.writeCsvData(audioResults, config);
 
         // SerialUSB1.print("csv sd write time: ");
         // SerialUSB1.println(millis()-time_millis);

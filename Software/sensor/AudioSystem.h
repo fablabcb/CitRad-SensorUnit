@@ -53,6 +53,7 @@ class AudioSystem
         uint8_t bins_with_signal; // how many bins have signal over the noise threshold?
         uint8_t bins_with_signal_reverse;
 
+        uint16_t numberOfFftBins;
         uint16_t maxBinIndex;
         uint16_t minBinIndex;
 
@@ -70,7 +71,6 @@ class AudioSystem
     bool hasData();
     void updateIQ(Config const& config);
 
-    uint16_t getNumberOfFftBins() const { return numberOfFftBins; }
     float getPeak() { return peak1.read(); }
 
   private:

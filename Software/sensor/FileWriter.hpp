@@ -2,29 +2,32 @@
 #define FILEWRITER_HPP
 
 #include "AudioSystem.h"
+#include "Config.h"
 
 #include <SD.h>
 
+#include <chrono>
 #include <stdint.h>
 
 class FileWriter
 {
   public:
-    void writeRawHeader(size_t const binCount, bool iqMeasurement, uint16_t sampleRate);
-    void writeRawData(AudioSystem::Results const& audioResults, bool write8bit);
+    void writeRawData(AudioSystem::Results const& audioResults, bool write8bit, Config const& config);
+    void writeCsvData(AudioSystem::Results const& audioResults, Config const& config);
 
-    void writeCsvHeader();
-    void writeCsvData(AudioSystem::Results const& audioResults);
-
-    void setup();
-    bool canWriteToSd() const;
+    void setupSpi();
+    bool setupSdCard();
 
   private:
-    char rawFileName[30];
-    char csvFileName[30];
+    void openRawFile(size_t const binCount, Config const& config);
+    void openCsvFile(Config const& config);
 
+  private:
     File rawFile;
     File csvFile;
+
+    std::chrono::steady_clock::time_point rawFileCreation;
+    std::chrono::steady_clock::time_point csvFileCreation;
 
   private:
     const int SDCARD_MOSI_PIN = 11; // Teensy 4 ignores this, uses pin 11

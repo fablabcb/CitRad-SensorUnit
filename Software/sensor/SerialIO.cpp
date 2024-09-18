@@ -96,8 +96,7 @@ void SerialIO::sendOutput(AudioSystem::Results const& audioResults, AudioSystem 
     float const peak = audio.getPeak();
     Serial.write((byte*)&peak, 4);
 
-    uint16_t const binCount = audio.getNumberOfFftBins();
-    Serial.write((byte*)&binCount, 2);
+    Serial.write((byte*)&audioResults.numberOfFftBins, 2);
 
     for(size_t i = audioResults.minBinIndex; i < audioResults.maxBinIndex; i++)
         Serial.write((byte*)&(audioResults.noise_floor_distance[i]), 4);
