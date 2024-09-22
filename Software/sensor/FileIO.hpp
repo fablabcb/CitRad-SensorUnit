@@ -1,15 +1,17 @@
-#ifndef FILEWRITER_HPP
-#define FILEWRITER_HPP
+#ifndef FILEIO_HPP
+#define FILEIO_HPP
 
 #include "AudioSystem.h"
-#include "Config.h"
+#include "Config.hpp"
 
 #include <SD.h>
 
 #include <chrono>
-#include <stdint.h>
+#include <cstddef>
+#include <map>
+#include <string>
 
-class FileWriter
+class FileIO
 {
   public:
     void writeRawData(AudioSystem::Results const& audioResults, bool write8bit, Config const& config);
@@ -17,6 +19,8 @@ class FileWriter
 
     void setupSpi();
     bool setupSdCard();
+
+    std::map<std::string, std::string> readConfigFile() const;
 
   private:
     void openRawFile(size_t const binCount, Config const& config);

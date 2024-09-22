@@ -1,6 +1,6 @@
 #include "AudioSystem.h"
-#include "Config.h"
-#include "FileWriter.hpp"
+#include "Config.hpp"
+#include "FileIO.hpp"
 #include "SerialIO.hpp"
 #include "functions.h"
 
@@ -12,10 +12,18 @@ AudioSystem audio;
 AudioSystem::Results audioResults; // global to optimize for speed
 Config config;
 
-FileWriter fileWriter;
+FileIO fileWriter;
 SerialIO serialIO;
 
 bool canWriteData = false;
+
+void onSdCardActive()
+{
+    canWriteData = true;
+    Serial.println("(I) SD card initialized");
+    auto configFromFile = fileWriter.readConfigFile();
+    config.process(configFromFile);
+}
 
 void setup()
 {
@@ -36,40 +44,24 @@ void setup()
         setTime(timestamp);
     }
 
-    // wait max 5s for serial connection
-    {
-        Serial.begin(9600);
-        int counter = 5;
-        while(counter > 0 && !Serial)
-        {
-            delay(1000);
-            counter--;
-        }
-        Serial.println("Hello Citizen Radar");
-    }
-
+    serialIO.setup();
     fileWriter.setupSpi();
 
     if(fileWriter.setupSdCard())
-    {
-        canWriteData = true;
-        Serial.println("SD card initialized");
-    }
+        onSdCardActive();
     else
-        Serial.println("Unable to access the SD card");
+        Serial.println("(W) Unable to access the SD card");
 }
 
 void loop()
 {
     if(not canWriteData)
     {
-        if(fileWriter.setupSdCard())
-        {
-            canWriteData = true;
-            Serial.println("SD card initialized");
-        }
-
         delay(1000);
+
+        if(fileWriter.setupSdCard())
+            onSdCardActive();
+
         return;
     }
 

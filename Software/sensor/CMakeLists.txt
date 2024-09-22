@@ -12,9 +12,10 @@ add_custom_target(aux
     SOURCES
         AudioSystem.cpp
         AudioSystem.h
-        Config.h
-        FileWriter.cpp
-        FileWriter.hpp
+        Config.hpp
+        Config.cpp
+        FileIO.cpp
+        FileIO.hpp
         functions.cpp
         functions.h
         Makefile

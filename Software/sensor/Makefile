@@ -22,6 +22,10 @@ help:
 	@echo "$(MAKE) deployNoBuild - just upload to teensy"
 	@echo "$(MAKE) monitor       - monitor $(DEVICE_TTY)"
 
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR_ARD)
+
 .PHONY: build
 build:
 	arduino-cli compile --jobs 8 --build-path $(BUILD_DIR_ARD) --build-cache-path /tmp/arduino --fqbn $(BOARD) -v . && echo "Build OK"

@@ -3,6 +3,20 @@
 #include <SerialFlash.h>
 #include <TimeLib.h>
 
+void SerialIO::setup()
+{
+    // wait max 5s for serial connection
+
+    Serial.begin(9600);
+    int counter = 5;
+    while(counter > 0 && !Serial)
+    {
+        delay(1000);
+        counter--;
+    }
+    Serial.println("Hello Citizen Radar");
+}
+
 void SerialIO::printDigits(int digits)
 {
     // utility function for digital clock display: prints preceding colon and leading 0
