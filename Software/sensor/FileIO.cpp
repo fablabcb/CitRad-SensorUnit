@@ -18,6 +18,23 @@ bool hasToCreateNew(File& file, Config const& config, std::chrono::steady_clock:
     return duration_cast<seconds>(now - oldCreationTime).count() >= config.maxSecondsPerFile;
 }
 
+void openNewUniqueFile(File& file, String const& baseName, String const& fileExtension)
+{
+    String fileName = baseName + "." + fileExtension;
+
+    int suffix = 0;
+    String newName = fileName;
+    while(SD.exists(newName.c_str()))
+    {
+        suffix++;
+        newName = baseName + "." + String(suffix) + "." + fileExtension;
+    }
+
+    Serial.println("(D) Creating new file: " + newName);
+
+    file = SD.open(newName.c_str(), FILE_WRITE);
+}
+
 void FileIO::writeRawData(AudioSystem::Results const& audioResults, bool write8bit, Config const& config)
 {
     if(hasToCreateNew(rawFile, config, rawFileCreation))
@@ -70,14 +87,13 @@ void FileIO::openRawFile(size_t const binCount, Config const& config)
     }
 
     char filePattern[30];
-    sprintf(filePattern, "%04d-%02d-%02d_%02d-%02d-%02d.bin", year(), month(), day(), hour(), minute(), second());
-    const String fileName = String(config.filePrefix.c_str()) + filePattern;
+    sprintf(filePattern, "%04d-%02d-%02d_%02d-%02d-%02d", year(), month(), day(), hour(), minute(), second());
+    const String baseName = String(config.filePrefix.c_str()) + filePattern;
 
-    Serial.println("(D) Creating new file: " + fileName);
+    openNewUniqueFile(rawFile, baseName, "bin");
 
     time_t timestamp = Teensy3Clock.get();
 
-    rawFile = SD.open(fileName.c_str(), FILE_WRITE);
     rawFile.write((byte*)&fileFormatVersion, 2);
     rawFile.write((byte*)&timestamp, 4);
     rawFile.write((byte*)&binCount, 2);
@@ -97,12 +113,10 @@ void FileIO::openCsvFile(Config const& config)
     }
 
     char filePattern[30];
-    sprintf(filePattern, "%04d-%02d-%02d_%02d-%02d-%02d.csv", year(), month(), day(), hour(), minute(), second());
-    const String fileName = String(config.filePrefix.c_str()) + filePattern;
+    sprintf(filePattern, "%04d-%02d-%02d_%02d-%02d-%02d", year(), month(), day(), hour(), minute(), second());
+    const String baseName = String(config.filePrefix.c_str()) + filePattern;
 
-    Serial.println("(D) Creating new file: " + fileName);
-
-    csvFile = SD.open(fileName.c_str(), FILE_WRITE);
+    openNewUniqueFile(csvFile, baseName, "csv");
     csvFile.println("timestamp, speed, speed_reverse, strength, strength_reverse, "
                     "mean_amplitude, mean_amplitude_reverse, bins_with_signal, "
                     "bins_with_signal_reverse, pedestrian_mean_amplitude");
@@ -113,7 +127,6 @@ void FileIO::openCsvFile(Config const& config)
 
 void FileIO::setupSpi()
 {
-    // Configure SPI
     SPI.setMOSI(SDCARD_MOSI_PIN);
     SPI.setSCK(SDCARD_SCK_PIN);
 }
