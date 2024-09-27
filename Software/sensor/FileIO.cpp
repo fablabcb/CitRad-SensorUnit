@@ -42,7 +42,7 @@ bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const
     bool ok = true;
     if(hasToCreateNew(rawFile, config, rawFileCreation))
     {
-        ok = openRawFile(audioResults.numberOfFftBins, config, dataSize);
+        ok = openRawFile(audioResults.setupData.numberOfFftBins, config, dataSize);
         if(not ok)
             return false;
     }
@@ -50,11 +50,11 @@ bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const
     if(rawFile.write((byte*)&audioResults.timestamp, 4) != 4)
         return false;
 
-    uint32_t count = audioResults.maxBinIndex - audioResults.minBinIndex;
+    uint32_t count = audioResults.setupData.maxBinIndex - audioResults.setupData.minBinIndex;
     if(rawFile.write(&count, 4) != 4)
         return false;
 
-    for(int i = audioResults.minBinIndex; i < audioResults.maxBinIndex; i++)
+    for(int i = audioResults.setupData.minBinIndex; i < audioResults.setupData.maxBinIndex; i++)
     {
         if(config.write8bit)
             ok = rawFile.write((uint8_t)audioResults.spectrum[i]);
@@ -84,23 +84,23 @@ bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
 
     csvFile.print(audioResults.timestamp);
     csvFile.print(", ");
-    csvFile.print(audioResults.detected_speed);
+    csvFile.print(audioResults.forward.detectedSpeed);
     csvFile.print(", ");
-    csvFile.print(audioResults.detected_speed_reverse);
+    csvFile.print(audioResults.reverse.detectedSpeed);
     csvFile.print(", ");
-    csvFile.print(audioResults.amplitudeMax);
+    csvFile.print(audioResults.forward.amplitudeMax);
     csvFile.print(", ");
-    csvFile.print(audioResults.amplitudeMaxReverse);
+    csvFile.print(audioResults.reverse.amplitudeMax);
     csvFile.print(", ");
-    csvFile.print(audioResults.mean_amplitude);
+    csvFile.print(audioResults.forward.meanAmplitude);
     csvFile.print(", ");
-    csvFile.print(audioResults.mean_amplitude_reverse);
+    csvFile.print(audioResults.reverse.meanAmplitude);
     csvFile.print(", ");
-    csvFile.print(audioResults.bins_with_signal);
+    csvFile.print(audioResults.forward.binsWithSignal);
     csvFile.print(", ");
-    csvFile.print(audioResults.bins_with_signal_reverse);
+    csvFile.print(audioResults.reverse.binsWithSignal);
     csvFile.print(", ");
-    csvFile.println(audioResults.pedestrian_amplitude);
+    csvFile.println(audioResults.pedestrianAmplitude);
     csvFile.flush();
 
     return true;
@@ -131,8 +131,8 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     rawFile.write((byte*)&timestamp, 4);
     rawFile.write((byte*)&binCount, 2);
     rawFile.write((byte*)&dataSize, 1);
-    rawFile.write((byte*)&config.audio.iq_measurement, 1);
-    rawFile.write((byte*)&config.audio.sample_rate, 2);
+    rawFile.write((byte*)&config.audio.isIqMeasurement, 1);
+    rawFile.write((byte*)&config.audio.sampleRate, 2);
     rawFile.flush();
 
     rawFileCreation = std::chrono::steady_clock::now();
@@ -159,8 +159,8 @@ bool FileIO::openCsvFile(Config const& config)
         return false;
     }
     csvFile.println("timestamp, speed, speed_reverse, strength, strength_reverse, "
-                    "mean_amplitude, mean_amplitude_reverse, bins_with_signal, "
-                    "bins_with_signal_reverse, pedestrian_mean_amplitude");
+                    "meanAmplitude, meanAmplitude_reverse, binsWithSignal, "
+                    "binsWithSignal_reverse, pedestrian_meanAmplitude");
     csvFile.flush();
 
     csvFileCreation = std::chrono::steady_clock::now();

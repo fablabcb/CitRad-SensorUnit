@@ -36,13 +36,13 @@ void SerialIO::processInputs(AudioSystem::Config& config, bool& sendOutput)
         if(input == 100) // 'd' for data
             sendOutput = true;
 
-        if((input == 0) & (config.mic_gain > 0.001))
+        if((input == 0) & (config.micGain > 0.001))
         { // - key
-            config.mic_gain -= 0.01;
+            config.micGain -= 0.01;
         }
-        if((input == 1) & (config.mic_gain < 10))
+        if((input == 1) & (config.micGain < 10))
         { // + key
-            config.mic_gain += 0.01;
+            config.micGain += 0.01;
         }
 
         if(input == 111)
@@ -102,16 +102,16 @@ void SerialIO::processInputs(AudioSystem::Config& config, bool& sendOutput)
 void SerialIO::sendOutput(AudioSystem::Results const& audioResults, AudioSystem const& audio, Config const& config)
 {
     // send data via serial port - this is tied to the FFT_visualisation-pde java code
-    auto const micGain = static_cast<int8_t>(config.audio.mic_gain);
+    auto const micGain = static_cast<int8_t>(config.audio.micGain);
     Serial.write((byte*)&micGain, 1);
-    Serial.write((byte*)&audioResults.max_freq_Index, 2);
+    Serial.write((byte*)&audioResults.forward.maxFrequencyIdx, 2);
 
     // highest peak-to-peak distance of the signal (if >= 1 clipping occurs)
     float const peak = audio.getPeak();
     Serial.write((byte*)&peak, 4);
 
-    Serial.write((byte*)&audioResults.numberOfFftBins, 2);
+    Serial.write((byte*)&audioResults.setupData.numberOfFftBins, 2);
 
-    for(size_t i = audioResults.minBinIndex; i < audioResults.maxBinIndex; i++)
-        Serial.write((byte*)&(audioResults.noise_floor_distance[i]), 4);
+    for(size_t i = audioResults.setupData.minBinIndex; i < audioResults.setupData.maxBinIndex; i++)
+        Serial.write((byte*)&(audioResults.noiseFloorDistance[i]), 4);
 }

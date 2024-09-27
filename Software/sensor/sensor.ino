@@ -28,13 +28,13 @@ void onSdCardActive()
 void setup()
 {
     setSyncProvider(getTeensy3Time);
-    setI2SFreq(config.audio.sample_rate);
+    setI2SFreq(config.audio.sampleRate);
 
     // TODO maybe move to audio
     pinMode(PIN_A3, OUTPUT); // A3=17, A8=22, A4=18
     digitalWrite(PIN_A4, LOW);
 
-    audio.setup(config.audio, config.max_pedestrian_speed, config.send_max_speed);
+    audio.setup(config.audio, config.maxPedestrianSpeed, config.maxSpeedToUse);
 
     // TODO this seems to be a get&set to and from the same data point?
     // setTime(Teensy3Clock.get());

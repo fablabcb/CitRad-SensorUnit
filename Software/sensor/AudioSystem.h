@@ -5,20 +5,24 @@
 #include <AudioStream_F32.h>
 #include <OpenAudio_ArduinoLibrary.h>
 
+#include <array>
+#include <cstddef>
+
 class AudioSystem
 {
   public:
+    static const size_t fftWidth = 1024;
+
+  public:
     struct Config
     {
-        const unsigned int fftWidth = 1024;
+        const uint16_t sampleRate = 12000;             // Hz; sample rate of data acquisition
+        const uint8_t audioInput = AUDIO_INPUT_LINEIN; // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
+        const uint8_t lineInLevel = 15;                // only relevant if AUDIO_INPUT_LINEIN is used
+        const bool isIqMeasurement = true;             // measure in both directions?
 
-        const uint16_t sample_rate = 12000;             // Hz; sample rate of data acquisition
-        const uint8_t audio_input = AUDIO_INPUT_LINEIN; // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
-        const uint8_t linein_level = 15;                // only relevant if AUDIO_INPUT_LINEIN is used
-        const bool iq_measurement = true;               // measure in both directions?
-
-        const float noise_floor_distance_threshold = 8; // dB; distance of "proper signal" to noise floor
-        float mic_gain = 1.0;                           // only relevant if AUDIO_INPUT_MIC is used
+        const float noiseFloorDistance_threshold = 8; // dB; distance of "proper signal" to noise floor
+        float micGain = 1.0;                          // only relevant if AUDIO_INPUT_MIC is used
 
         // IQ calibration
         bool hasChanges = false;
@@ -28,38 +32,40 @@ class AudioSystem
         Config& operator=(Config const& other);
     };
 
-    struct Results
+    // data derived from config
+    struct SetupData
     {
-        // spectrum
-
-        float noise_floor_distance[1024];
-        float spectrum[1024];                // spectral data
-        float spectrum_smoothed[1024] = {0}; // smoothed spectral data for noise floor
-
-        float amplitudeMax;        // highest signal in spectrum
-        float amplitudeMaxReverse; // highest signal in spectrum reverse direction
-
-        uint16_t max_freq_Index;         // index of highest signal in spectrum
-        uint16_t max_freq_Index_reverse; // index of highest signal in spectrum reverse direction
-
-        uint16_t max_pedestrian_bin;
-        float pedestrian_amplitude;   // used to detect the presence of a pedestrians
-        float detected_speed;         // speed in m/s based on peak frequency
-        float detected_speed_reverse; // speed in m/s based on peak frequency reverse direction
-
-        float mean_amplitude; // mean amplitude in spectrum used to detect cars passing by the sensor
-        float mean_amplitude_reverse;
-
-        uint8_t bins_with_signal; // how many bins have signal over the noise threshold?
-        uint8_t bins_with_signal_reverse;
-
-        uint16_t numberOfFftBins;
         uint16_t maxBinIndex;
         uint16_t minBinIndex;
+        uint16_t pedestriansBinMax; // maximum bin index to even consider to contain pedestrian data
+        uint16_t numberOfFftBins;
+        uint16_t iqOffset; // offset used for IQ calculation
+    };
+
+    struct Results
+    {
+        struct Data
+        {
+            float amplitudeMax = -9999;   // highest signal in spectrum
+            uint16_t maxFrequencyIdx = 0; // index of highest signal in spectrum
+            float detectedSpeed = 0.0;    // speed in m/s based on peak frequency
+            float meanAmplitude = 0.0;    // mean amplitude in spectrum used to detect cars passing by the sensor
+            uint8_t binsWithSignal = 0;   // how many bins have signal over the noise threshold?
+        };
+
+        std::array<float, fftWidth> noiseFloorDistance;
+        std::array<float, fftWidth> spectrum;         // spectral data
+        std::array<float, fftWidth> spectrumSmoothed; // smoothed spectral data for noise floor
+
+        Data forward; // result data for forward direction
+        Data reverse; // result data for backward direction
+
+        SetupData setupData;
+        float pedestrianAmplitude; // used to detect the presence of a pedestrians
 
         unsigned long timestamp; // ms of how long the sensor has been running
 
-        void process(float* data, uint16_t iq_offset, float noiseFloorDistanceThreshold, float speedConversion);
+        void process(float* data, float noiseFloorDistanceThreshold, float speedConversion);
     };
 
   public:
@@ -71,19 +77,14 @@ class AudioSystem
     bool hasData();
     void updateIQ(Config const& config);
 
-    float getPeak() { return peak1.read(); }
+    float getPeak() const { return peak1.read(); }
 
   private:
     Config config;
-
-    uint16_t iq_offset;       // offset used for IQ calculation
-    uint16_t numberOfFftBins; // is calculated from send_max_speed
-    uint16_t maxBinIndex;
-    uint16_t minBinIndex;
-    uint16_t max_pedestrian_bin;
+    SetupData setupData;
 
     AudioAnalyzeFFT1024_IQ_F32 fft_IQ1024;
-    AudioAnalyzePeak_F32 peak1;
+    mutable AudioAnalyzePeak_F32 peak1;
     AudioEffectGain_F32 I_gain; // iGain
     AudioMixer4_F32 Q_mixer;    // qMixer
 

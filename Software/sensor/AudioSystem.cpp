@@ -2,7 +2,7 @@
 
 #include "noise_floor.h"
 
-#include <cstddef> // size_t
+// const size_t AudioSystem::fftWidth = 1024;
 
 AudioSystem::AudioSystem()
     : patchCord1(linein, 0, I_gain, 0)
@@ -15,7 +15,7 @@ AudioSystem::AudioSystem()
     , patchCord7(linein, 1, headphone, 1)
 {}
 
-void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSpeed, float sendMaxSpeed)
+void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSpeed, float maxSpeedToUse)
 {
     this->config = config;
 
@@ -23,9 +23,9 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
     AudioMemory_F32(400);
 
     sgtl5000_1.enable();
-    sgtl5000_1.inputSelect(config.audio_input);  // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
-    sgtl5000_1.micGain(config.mic_gain);         // only relevant if AUDIO_INPUT_MIC is used
-    sgtl5000_1.lineInLevel(config.linein_level); // only relevant if AUDIO_INPUT_LINEIN is used
+    sgtl5000_1.inputSelect(config.audioInput);  // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
+    sgtl5000_1.micGain(config.micGain);         // only relevant if AUDIO_INPUT_MIC is used
+    sgtl5000_1.lineInLevel(config.lineInLevel); // only relevant if AUDIO_INPUT_LINEIN is used
     sgtl5000_1.volume(.5);
 
     updateIQ(config);
@@ -35,23 +35,23 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
     fft_IQ1024.setOutputType(FFT_DBFS); // FFT_RMS or FFT_POWER or FFT_DBFS
     fft_IQ1024.setXAxis(3);
 
-    speedConversion = 1.0 * (config.sample_rate / config.fftWidth) / 44.0; // conversion from Hz to m/s
-    max_pedestrian_bin = maxPedestrianSpeed / speedConversion;             // convert max_pedestrian_speed to bin
-    uint16_t rawBinCount = (uint16_t)min(config.fftWidth / 2, sendMaxSpeed / speedConversion);
+    speedConversion = 1.0 * (config.sampleRate / AudioSystem::fftWidth) / 44.0; // conversion from Hz to m/s
+    setupData.pedestriansBinMax = maxPedestrianSpeed / speedConversion;         // convert maxPedestrianSpeed to bin
+    uint16_t rawBinCount = (uint16_t)min(AudioSystem::fftWidth / 2, maxSpeedToUse / speedConversion);
 
     // IQ = symetric FFT
-    if(config.iq_measurement)
+    if(config.isIqMeasurement)
     {
-        iq_offset = config.fftWidth / 2;   // new middle point
-        numberOfFftBins = rawBinCount * 2; // send both sides; not only one
-        maxBinIndex = numberOfFftBins;
-        minBinIndex = (config.fftWidth - maxBinIndex);
+        setupData.iqOffset = AudioSystem::fftWidth / 2; // new middle point
+        setupData.numberOfFftBins = rawBinCount * 2;    // send both sides; not only one
+        setupData.maxBinIndex = setupData.numberOfFftBins;
+        setupData.minBinIndex = (AudioSystem::fftWidth - setupData.maxBinIndex);
     }
     else
     {
-        iq_offset = 0;
-        minBinIndex = 0;
-        numberOfFftBins = rawBinCount;
+        setupData.iqOffset = 0;
+        setupData.minBinIndex = 0;
+        setupData.numberOfFftBins = rawBinCount;
     }
 }
 
@@ -59,78 +59,65 @@ void AudioSystem::processData(Results& results)
 {
     float* pointer = fft_IQ1024.getData();
 
-    results.maxBinIndex = this->maxBinIndex;
-    results.minBinIndex = this->minBinIndex;
-    results.max_pedestrian_bin = this->max_pedestrian_bin;
-    results.numberOfFftBins = this->numberOfFftBins;
-
-    results.process(pointer, iq_offset, config.noise_floor_distance_threshold, speedConversion);
+    results.setupData = this->setupData;
+    results.process(pointer, config.noiseFloorDistance_threshold, speedConversion);
 }
 
-void AudioSystem::Results::process(
-    float* pointer, uint16_t iq_offset, float noiseFloorDistanceThreshold, float speedConversion)
+void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThreshold, float speedConversion)
 {
-    for(size_t kk = 0; kk < 1024; kk++)
+    for(size_t kk = 0; kk < AudioSystem::fftWidth; kk++)
         spectrum[kk] = *(pointer + kk);
 
     int smooth_n = 1000; // number of samples used for smoothing the spectrum
-    for(size_t i = 0; i < 1024; i++)
-        spectrum_smoothed[i] = ((smooth_n - 1) * spectrum_smoothed[i] + spectrum[i]) / smooth_n;
-
-    // detect highest frequency
-    amplitudeMax = -9999.0;
-    max_freq_Index = 0;
-    max_freq_Index_reverse = 0;
-    mean_amplitude = 0.0;
-    mean_amplitude_reverse = 0.0;
-    pedestrian_amplitude = 0.0;
-    bins_with_signal = 0;
-    bins_with_signal_reverse = 0;
-
-    // detect pedestrian
-    for(size_t i = 3 + iq_offset; i < max_pedestrian_bin + iq_offset; i++)
+    for(size_t i = 0; i < AudioSystem::fftWidth; i++)
     {
-        pedestrian_amplitude = pedestrian_amplitude + spectrum[i];
-    }
-    pedestrian_amplitude = pedestrian_amplitude / max_pedestrian_bin;
-
-    for(size_t i = 0; i < 1024; i++)
-    {
-        noise_floor_distance[i] = spectrum[i] - global_noiseFloor[i];
+        spectrumSmoothed[i] = ((smooth_n - 1) * spectrumSmoothed[i] + spectrum[i]) / smooth_n;
+        noiseFloorDistance[i] = spectrum[i] - global_noiseFloor[i];
     }
 
-    for(size_t i = (max_pedestrian_bin + 1 + iq_offset); i < maxBinIndex; i++)
+    forward = reverse = Data{};
+
+    // detect pedestrians
+    pedestrianAmplitude = 0.0;
+    for(size_t i = 3 + setupData.iqOffset; i < setupData.pedestriansBinMax + setupData.iqOffset; i++)
+        pedestrianAmplitude += spectrum[i];
+    pedestrianAmplitude /= setupData.pedestriansBinMax;
+
+    // detect faster things
+    size_t const usedBinsStartIdx = (setupData.pedestriansBinMax + 1 + setupData.iqOffset);
+    for(size_t i = usedBinsStartIdx; i < setupData.maxBinIndex; i++)
     {
-        mean_amplitude = mean_amplitude + noise_floor_distance[i];
-        if(noise_floor_distance[i] > noiseFloorDistanceThreshold)
-            bins_with_signal++;
+        float& forwardValue = noiseFloorDistance[i];
+        float& reverseValue = noiseFloorDistance[AudioSystem::fftWidth - i];
 
-        mean_amplitude_reverse = mean_amplitude_reverse + noise_floor_distance[1024 - i];
-        if(noise_floor_distance[1024 - i] > noiseFloorDistanceThreshold)
-            bins_with_signal_reverse++;
+        forward.meanAmplitude += forwardValue;
+        if(forwardValue > noiseFloorDistanceThreshold)
+            forward.binsWithSignal++;
 
-        // with noise_floor_distance[i] > noise_floor_distance[1024-i] make shure that the signal is in the right
+        reverse.meanAmplitude += reverseValue;
+        if(reverseValue > noiseFloorDistanceThreshold)
+            reverse.binsWithSignal++;
+
+        // with noiseFloorDistance[i] > noiseFloorDistance[1024-i] make shure that the signal is in the right
         // direction
-        if(noise_floor_distance[i] > noise_floor_distance[1024 - i] && noise_floor_distance[i] > amplitudeMax)
+        if(forwardValue > reverseValue && forwardValue > forward.amplitudeMax)
         {
-            amplitudeMax = noise_floor_distance[i]; // remember highest amplitude
-            max_freq_Index = i;                     // remember frequency index
+            forward.amplitudeMax = forwardValue; // remember highest amplitude
+            forward.maxFrequencyIdx = i;         // remember frequency index
         }
-        if(noise_floor_distance[1024 - i] > noise_floor_distance[i] && noise_floor_distance[1024 - i] > amplitudeMax)
+        if(reverseValue > forwardValue && reverseValue > forward.amplitudeMax)
         {
-            amplitudeMaxReverse = noise_floor_distance[1024 - i]; // remember highest amplitude
-            max_freq_Index_reverse = i;                           // remember frequency index
+            reverse.amplitudeMax = reverseValue; // remember highest amplitude
+            reverse.maxFrequencyIdx = i;         // remember frequency index
         }
     }
-    detected_speed = (max_freq_Index - iq_offset) * speedConversion;
-    detected_speed_reverse = (max_freq_Index_reverse - iq_offset) * speedConversion;
+    forward.detectedSpeed = (forward.maxFrequencyIdx - setupData.iqOffset) * speedConversion;
+    reverse.detectedSpeed = (reverse.maxFrequencyIdx - setupData.iqOffset) * speedConversion;
 
-    mean_amplitude =
-        mean_amplitude /
-        (maxBinIndex - (max_pedestrian_bin + 1 + iq_offset)); // TODO: is this valid when working with dB values?
-    mean_amplitude_reverse =
-        mean_amplitude_reverse /
-        (maxBinIndex - (max_pedestrian_bin + 1 + iq_offset)); // TODO: is this valid when working with dB values?
+    // TODO: is this valid when working with dB values?
+    auto const binCount = setupData.maxBinIndex - usedBinsStartIdx;
+    forward.meanAmplitude /= binCount;
+    reverse.meanAmplitude /= binCount;
 }
 
 bool AudioSystem::hasData()
@@ -152,7 +139,7 @@ void AudioSystem::updateIQ(Config const& config)
 
 AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)
 {
-    mic_gain = other.mic_gain;
+    micGain = other.micGain;
     alpha = other.alpha;
     psi = other.psi;
 
