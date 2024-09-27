@@ -77,9 +77,6 @@ void AudioSystem::Results::process(
     for(size_t i = 0; i < 1024; i++)
         spectrum_smoothed[i] = ((smooth_n - 1) * spectrum_smoothed[i] + spectrum[i]) / smooth_n;
 
-    // TODO FIX ME - this was active
-    // global_noiseFloor = spectrum_smoothed; // WHAT? noise_floor is const!
-
     // detect highest frequency
     amplitudeMax = -9999.0;
     max_freq_Index = 0;
