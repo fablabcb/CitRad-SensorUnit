@@ -703,6 +703,20 @@
       ],
       "Hash": "6b8177fd19982f0020743fadbfdbd933"
     },
+    "pracma": {
+      "Package": "pracma",
+      "Version": "2.4.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Hash": "44bc172d47d1ea0a638d9f299e321203"
+    },
     "purrr": {
       "Package": "purrr",
       "Version": "1.0.2",
@@ -756,6 +770,17 @@
       ],
       "Hash": "32c3f93e8360f667ca5863272ec8ba6a"
     },
+    "revealjs": {
+      "Package": "revealjs",
+      "Version": "0.9",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "rmarkdown"
+      ],
+      "Hash": "08e30caa337e6d335d83df1a05d5b9f3"
+    },
     "rlang": {
       "Package": "rlang",
       "Version": "1.1.4",
@@ -789,6 +814,19 @@
         "yaml"
       ],
       "Hash": "062470668513dcda416927085ee9bdc7"
+    },
+    "runner": {
+      "Package": "runner",
+      "Version": "0.4.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "methods",
+        "parallel"
+      ],
+      "Hash": "28a8c14ad9f77d5b275938c65128c7e7"
     },
     "sass": {
       "Package": "sass",
