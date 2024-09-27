@@ -14,17 +14,18 @@
 class FileIO
 {
   public:
-    void writeRawData(AudioSystem::Results const& audioResults, bool write8bit, Config const& config);
-    void writeCsvData(AudioSystem::Results const& audioResults, Config const& config);
+    bool writeRawData(AudioSystem::Results const& audioResults, Config const& config);
+    bool writeCsvData(AudioSystem::Results const& audioResults, Config const& config);
 
     void setupSpi();
     bool setupSdCard();
+    void closeSdCard();
 
     std::map<std::string, std::string> readConfigFile() const;
 
   private:
-    void openRawFile(size_t const binCount, Config const& config);
-    void openCsvFile(Config const& config);
+    bool openRawFile(uint16_t const binCount, Config const& config, uint8_t const& dataSize);
+    bool openCsvFile(Config const& config);
 
   private:
     File rawFile;
@@ -37,7 +38,7 @@ class FileIO
     const int SDCARD_MOSI_PIN = 11; // Teensy 4 ignores this, uses pin 11
     const int SDCARD_SCK_PIN = 13;  // Teensy 4 ignores this, uses pin 13
     const int SDCARD_CS_PIN = 10;
-    const uint16_t fileFormatVersion = 1;
+    const uint16_t fileFormatVersion = 2;
 };
 
 #endif

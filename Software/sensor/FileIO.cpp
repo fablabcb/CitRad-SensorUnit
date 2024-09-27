@@ -35,26 +35,52 @@ void openNewUniqueFile(File& file, String const& baseName, String const& fileExt
     file = SD.open(newName.c_str(), FILE_WRITE);
 }
 
-void FileIO::writeRawData(AudioSystem::Results const& audioResults, bool write8bit, Config const& config)
+bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const& config)
 {
-    if(hasToCreateNew(rawFile, config, rawFileCreation))
-        openRawFile(audioResults.numberOfFftBins, config);
+    uint8_t dataSize = config.write8bit ? 1 : 4;
 
-    rawFile.write((byte*)&audioResults.timestamp, 4);
+    bool ok = true;
+    if(hasToCreateNew(rawFile, config, rawFileCreation))
+    {
+        ok = openRawFile(audioResults.numberOfFftBins, config, dataSize);
+        if(not ok)
+            return false;
+    }
+
+    if(rawFile.write((byte*)&audioResults.timestamp, 4) != 4)
+        return false;
+
+    uint32_t count = audioResults.maxBinIndex - audioResults.minBinIndex;
+    if(rawFile.write(&count, 4) != 4)
+        return false;
 
     for(int i = audioResults.minBinIndex; i < audioResults.maxBinIndex; i++)
-        if(write8bit)
-            rawFile.write((uint8_t)-audioResults.spectrum[i]);
+    {
+        if(config.write8bit)
+            ok = rawFile.write((uint8_t)audioResults.spectrum[i]);
         else
-            rawFile.write((byte*)&audioResults.spectrum[i], 4);
+            ok = rawFile.write((byte*)&audioResults.spectrum[i], dataSize);
+
+        if(not ok)
+            return;
+    }
+
+    static const uint32_t endMarker = ~0; // all ones; will be NaN in float
+    if(rawFile.write(&count, 4) != 4)
+        return false;
 
     rawFile.flush();
+    return true;
 }
 
-void FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const& config)
+bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const& config)
 {
     if(hasToCreateNew(csvFile, config, csvFileCreation))
-        openCsvFile(config);
+    {
+        bool ok = openCsvFile(config);
+        if(not ok)
+            return false;
+    }
 
     csvFile.print(audioResults.timestamp);
     csvFile.print(", ");
@@ -76,9 +102,11 @@ void FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
     csvFile.print(", ");
     csvFile.println(audioResults.pedestrian_amplitude);
     csvFile.flush();
+
+    return true;
 }
 
-void FileIO::openRawFile(size_t const binCount, Config const& config)
+bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t const& dataSize)
 {
     if(rawFile)
     {
@@ -91,12 +119,18 @@ void FileIO::openRawFile(size_t const binCount, Config const& config)
     const String baseName = String(config.filePrefix.c_str()) + filePattern;
 
     openNewUniqueFile(rawFile, baseName, "bin");
+    if(not rawFile)
+    {
+        Serial.println("(E) Failed to open new raw file");
+        return false;
+    }
 
     time_t timestamp = Teensy3Clock.get();
 
     rawFile.write((byte*)&fileFormatVersion, 2);
     rawFile.write((byte*)&timestamp, 4);
     rawFile.write((byte*)&binCount, 2);
+    rawFile.write((byte*)&dataSize, 1);
     rawFile.write((byte*)&config.audio.iq_measurement, 1);
     rawFile.write((byte*)&config.audio.sample_rate, 2);
     rawFile.flush();
@@ -104,7 +138,7 @@ void FileIO::openRawFile(size_t const binCount, Config const& config)
     rawFileCreation = std::chrono::steady_clock::now();
 }
 
-void FileIO::openCsvFile(Config const& config)
+bool FileIO::openCsvFile(Config const& config)
 {
     if(csvFile)
     {
@@ -117,6 +151,11 @@ void FileIO::openCsvFile(Config const& config)
     const String baseName = String(config.filePrefix.c_str()) + filePattern;
 
     openNewUniqueFile(csvFile, baseName, "csv");
+    if(not csvFile)
+    {
+        Serial.println("(E) Failed to open new csv file");
+        return false;
+    }
     csvFile.println("timestamp, speed, speed_reverse, strength, strength_reverse, "
                     "mean_amplitude, mean_amplitude_reverse, bins_with_signal, "
                     "bins_with_signal_reverse, pedestrian_mean_amplitude");

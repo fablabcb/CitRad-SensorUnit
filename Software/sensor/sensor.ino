@@ -87,14 +87,32 @@ void loop()
 
     if(config.writeDataToSdCard)
     {
+        bool ok = false;
+
         if(config.writeRawData)
-            fileWriter.writeRawData(audioResults, config.write8bit, config);
+        {
+            ok = fileWriter.writeRawData(audioResults, config);
+            if(not ok)
+            {
+                Serial.println("(E) Failed to write raw data to SD card");
+                canWriteData = false;
+                // there does not seem to be a sane way to check if the SD card is back again - hope for the best
+            }
+        }
 
         if(config.writeCsvData)
-            fileWriter.writeCsvData(audioResults, config);
+        {
+            ok = fileWriter.writeCsvData(audioResults, config);
+            if(not ok)
+            {
+                Serial.println("(E) Failed to write csv data to SD card");
+                canWriteData = false;
+                // there does not seem to be a sane way to check if the SD card is back again - hope for the best
+            }
+        }
 
+        // SerialUSB1.println(second());
         // SerialUSB1.print("csv sd write time: ");
-        // SerialUSB1.println(millis()-time_millis);
     }
 
     if(sendOutput)
