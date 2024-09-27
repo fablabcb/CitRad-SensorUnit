@@ -136,6 +136,8 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     rawFile.flush();
 
     rawFileCreation = std::chrono::steady_clock::now();
+
+    return true;
 }
 
 bool FileIO::openCsvFile(Config const& config)
@@ -162,6 +164,8 @@ bool FileIO::openCsvFile(Config const& config)
     csvFile.flush();
 
     csvFileCreation = std::chrono::steady_clock::now();
+
+    return true;
 }
 
 void FileIO::setupSpi()
