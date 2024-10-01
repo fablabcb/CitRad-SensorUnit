@@ -1,25 +1,14 @@
 #ifndef AUDIOSYSTEM_H
 #define AUDIOSYSTEM_H
 
+#include "statistics.hpp"
+
 #include <Audio.h>
 #include <AudioStream_F32.h>
 #include <OpenAudio_ArduinoLibrary.h>
 
 #include <array>
 #include <cstddef>
-
-class RunningMean
-{
-  public:
-    RunningMean() = default;
-    RunningMean(size_t n, float initialValue);
-
-    float add(float newValue);
-
-  private:
-    size_t n = 100;
-    float value = 0.0f;
-};
 
 class AudioSystem
 {
@@ -37,6 +26,7 @@ class AudioSystem
         const float noiseFloorDistance_threshold = 8; // dB; distance of "proper signal" to noise floor
         float micGain = 1.0;                          // only relevant if AUDIO_INPUT_MIC is used
         size_t runningMeanHistoryN = 100;             // number N used for running mean
+        size_t hannWindowN = 31;                      // number N used for Hann window smoothing
 
         // IQ calibration
         bool hasChanges = false;
@@ -64,6 +54,7 @@ class AudioSystem
             float detectedSpeed = 0.0;    // speed in m/s based on peak frequency
             float meanAmplitude = 0.0;    // mean amplitude in spectrum used to detect cars passing by the sensor
             float runningMeanAmp = 0.0;   // simple running mean over X values
+            float carTriggerSignal = 0.0; // smoothed meanAmp (using Hann-window)
             uint16_t maxFrequencyIdx = 0; // index of highest signal in spectrum
             uint8_t binsWithSignal = 0;   // how many bins have signal over the noise threshold?
         };
@@ -100,6 +91,9 @@ class AudioSystem
     {
         RunningMean runningMeanForward;
         RunningMean runningMeanReverse;
+
+        HannWindowSmoothing smoothedAmpForward;
+        HannWindowSmoothing smoothedAmpReverse;
 
         // float runningMeanForward = 0.0f;
         // float runningMeanReverse = 0.0f;

@@ -100,11 +100,17 @@ bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
     csvFile.print(", ");
     csvFile.print(audioResults.reverse.binsWithSignal);
     csvFile.print(", ");
-    csvFile.println(audioResults.pedestrianAmplitude);
+    csvFile.print(audioResults.pedestrianAmplitude);
     csvFile.print(", ");
-    csvFile.println(audioResults.forward.runningMeanAmp); // dynamic_noise_level
+    csvFile.print(audioResults.forward.runningMeanAmp); // dynamic_noise_level
     csvFile.print(", ");
-    csvFile.println(audioResults.reverse.runningMeanAmp); // dynamic_noise_level_reverse
+    csvFile.print(audioResults.reverse.runningMeanAmp); // dynamic_noise_level_reverse
+    csvFile.print(", ");
+    csvFile.print(audioResults.forward.carTriggerSignal);
+    csvFile.print(", ");
+    csvFile.print(audioResults.reverse.carTriggerSignal);
+
+    csvFile.println("");
     csvFile.flush();
 
     return true;
@@ -162,10 +168,20 @@ bool FileIO::openCsvFile(Config const& config)
         Serial.println("(E) Failed to open new csv file");
         return false;
     }
-    csvFile.println(
-        "timestamp, speed, speed_reverse, strength, strength_reverse, "
-        "meanAmplitude, meanAmplitude_reverse, binsWithSignal, "
-        "binsWithSignal_reverse, pedestrian_meanAmplitude, dynamic_noise_level, dynamic_noise_level_reverse");
+    csvFile.print("timestamp, speed, speed_reverse, strength, strength_reverse, "
+                  "meanAmplitude, meanAmplitude_reverse, binsWithSignal, "
+                  "binsWithSignal_reverse, pedestrian_meanAmplitude");
+
+    csvFile.print(", dynamic_noise_level_");
+    csvFile.print(config.audio.runningMeanHistoryN);
+    csvFile.print(", dynamic_noise_level_reverse_");
+    csvFile.print(config.audio.runningMeanHistoryN);
+    csvFile.print(", car_trigger_signal_");
+    csvFile.print(config.audio.hannWindowN);
+    csvFile.print(", car_trigger_signal_reverse_");
+    csvFile.print(config.audio.hannWindowN);
+    csvFile.println("");
+
     csvFile.flush();
 
     csvFileCreation = std::chrono::steady_clock::now();

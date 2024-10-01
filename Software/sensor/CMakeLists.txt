@@ -21,6 +21,8 @@ add_custom_target(aux
         Makefile
         noise_floor.cpp
         noise_floor.h
+        statistics.hpp
+        statistics.cpp
         sensor.ino
         SerialIO.hpp
         SerialIO.cpp

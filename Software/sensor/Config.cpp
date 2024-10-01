@@ -57,6 +57,7 @@ void Config::process(std::map<std::string, std::string> const& map)
 
     run<size_t>(parseSize, "maxSecondsPerFile", this->maxSecondsPerFile, mapCpy);
     run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->audio.runningMeanHistoryN, mapCpy);
+    run<size_t>(parseSize, "carTriggerSignalSmoothingFactor", this->audio.hannWindowN, mapCpy);
     run<std::string>(parseString, "filePrefix", this->filePrefix, mapCpy);
 
     if(mapCpy.size() > 0)

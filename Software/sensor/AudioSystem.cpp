@@ -35,7 +35,7 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
     fft_IQ1024.setOutputType(FFT_DBFS); // FFT_RMS or FFT_POWER or FFT_DBFS
     fft_IQ1024.setXAxis(3);
 
-    speedConversion = 1.0 * (config.sampleRate / AudioSystem::fftWidth) / 44.0; // conversion from Hz to m/s
+    speedConversion = 1.0 * (config.sampleRate / AudioSystem::fftWidth) / 44.0; // conversion from Hz to km/h
     setupData.pedestriansBinMax = maxPedestrianSpeed / speedConversion;         // convert maxPedestrianSpeed to bin
     uint16_t rawBinCount = (uint16_t)min(AudioSystem::fftWidth / 2, maxSpeedToUse / speedConversion);
 
@@ -56,6 +56,9 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
 
     history.runningMeanForward = RunningMean(config.runningMeanHistoryN, 0.0f);
     history.runningMeanReverse = RunningMean(config.runningMeanHistoryN, 0.0f);
+
+    history.smoothedAmpForward = HannWindowSmoothing(config.hannWindowN);
+    history.smoothedAmpReverse = HannWindowSmoothing(config.hannWindowN);
 }
 
 void AudioSystem::processData(Results& results)
@@ -74,11 +77,9 @@ void AudioSystem::processData(Results& results)
 
 void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThreshold, float speedConversion)
 {
-    // int smooth_n = 1000; // number of samples used for smoothing the spectrum
     for(size_t i = 0; i < AudioSystem::fftWidth; i++)
     {
         spectrum[i] = pointer[i];
-        // spectrumSmoothed[i] = ((smooth_n - 1) * spectrumSmoothed[i] + spectrum[i]) / smooth_n;
         noiseFloorDistance[i] = spectrum[i] - global_noiseFloor[i];
     }
 
@@ -148,6 +149,10 @@ void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& hi
 {
     results.forward.runningMeanAmp = history.runningMeanForward.add(results.forward.meanAmplitude);
     results.reverse.runningMeanAmp = history.runningMeanReverse.add(results.reverse.meanAmplitude);
+
+    // TODO: this could be limited to a mean amp covering 0-50km/h only
+    results.forward.carTriggerSignal = history.smoothedAmpForward.add(results.forward.meanAmplitude);
+    results.reverse.carTriggerSignal = history.smoothedAmpReverse.add(results.reverse.meanAmplitude);
 }
 
 AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)
@@ -157,15 +162,4 @@ AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)
     psi = other.psi;
 
     return *this;
-}
-
-RunningMean::RunningMean(size_t n, float initialValue)
-    : n{n}
-    , value(initialValue)
-{}
-
-float RunningMean::add(float newValue)
-{
-    value = 1 / n * ((n - 1) * value + newValue);
-    return value;
 }
