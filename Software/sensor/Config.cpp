@@ -56,6 +56,7 @@ void Config::process(std::map<std::string, std::string> const& map)
     run<bool>(parseBool, "splitLargeFiles", this->splitLargeFiles, mapCpy);
 
     run<size_t>(parseSize, "maxSecondsPerFile", this->maxSecondsPerFile, mapCpy);
+    run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->audio.runningMeanHistoryN, mapCpy);
     run<std::string>(parseString, "filePrefix", this->filePrefix, mapCpy);
 
     if(mapCpy.size() > 0)

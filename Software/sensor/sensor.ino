@@ -81,8 +81,6 @@ void loop()
         config.audio.hasChanges = false;
     }
 
-    // elapsed time since start of sensor in milliseconds
-    audioResults.timestamp = millis();
     audio.processData(audioResults);
 
     if(config.writeDataToSdCard)

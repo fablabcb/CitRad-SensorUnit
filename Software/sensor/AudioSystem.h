@@ -8,6 +8,19 @@
 #include <array>
 #include <cstddef>
 
+class RunningMean
+{
+  public:
+    RunningMean() = default;
+    RunningMean(size_t n, float initialValue);
+
+    float add(float newValue);
+
+  private:
+    size_t n = 100;
+    float value = 0.0f;
+};
+
 class AudioSystem
 {
   public:
@@ -23,6 +36,7 @@ class AudioSystem
 
         const float noiseFloorDistance_threshold = 8; // dB; distance of "proper signal" to noise floor
         float micGain = 1.0;                          // only relevant if AUDIO_INPUT_MIC is used
+        size_t runningMeanHistoryN = 100;             // number N used for running mean
 
         // IQ calibration
         bool hasChanges = false;
@@ -47,25 +61,27 @@ class AudioSystem
         struct Data
         {
             float amplitudeMax = -9999;   // highest signal in spectrum
-            uint16_t maxFrequencyIdx = 0; // index of highest signal in spectrum
             float detectedSpeed = 0.0;    // speed in m/s based on peak frequency
             float meanAmplitude = 0.0;    // mean amplitude in spectrum used to detect cars passing by the sensor
+            float runningMeanAmp = 0.0;   // simple running mean over X values
+            uint16_t maxFrequencyIdx = 0; // index of highest signal in spectrum
             uint8_t binsWithSignal = 0;   // how many bins have signal over the noise threshold?
         };
 
+        void process(float* data, float noiseFloorDistanceThreshold, float speedConversion);
+
+      public:
+        unsigned long timestamp; // ms of how long the sensor has been running
+        SetupData setupData;
+
         std::array<float, fftWidth> noiseFloorDistance;
-        std::array<float, fftWidth> spectrum;         // spectral data
-        std::array<float, fftWidth> spectrumSmoothed; // smoothed spectral data for noise floor
+        std::array<float, fftWidth> spectrum; // spectral data
+        // std::array<float, fftWidth> spectrumSmoothed; // smoothed spectral data for noise floor
 
         Data forward; // result data for forward direction
         Data reverse; // result data for backward direction
 
-        SetupData setupData;
         float pedestrianAmplitude; // used to detect the presence of a pedestrians
-
-        unsigned long timestamp; // ms of how long the sensor has been running
-
-        void process(float* data, float noiseFloorDistanceThreshold, float speedConversion);
     };
 
   public:
@@ -80,8 +96,22 @@ class AudioSystem
     float getPeak() const { return peak1.read(); }
 
   private:
+    struct History
+    {
+        RunningMean runningMeanForward;
+        RunningMean runningMeanReverse;
+
+        // float runningMeanForward = 0.0f;
+        // float runningMeanReverse = 0.0f;
+    };
+
+    void useAndUpdateHistory(Results& results, History& history);
+
+  private:
     Config config;
     SetupData setupData;
+
+    History history;
 
     AudioAnalyzeFFT1024_IQ_F32 fft_IQ1024;
     mutable AudioAnalyzePeak_F32 peak1;

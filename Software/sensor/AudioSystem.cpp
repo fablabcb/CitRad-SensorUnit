@@ -1,8 +1,8 @@
 #include "AudioSystem.h"
 
-#include "noise_floor.h"
+#include <TimeLib.h>
 
-// const size_t AudioSystem::fftWidth = 1024;
+#include "noise_floor.h"
 
 AudioSystem::AudioSystem()
     : patchCord1(linein, 0, I_gain, 0)
@@ -53,25 +53,32 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
         setupData.minBinIndex = 0;
         setupData.numberOfFftBins = rawBinCount;
     }
+
+    history.runningMeanForward = RunningMean(config.runningMeanHistoryN, 0.0f);
+    history.runningMeanReverse = RunningMean(config.runningMeanHistoryN, 0.0f);
 }
 
 void AudioSystem::processData(Results& results)
 {
-    float* pointer = fft_IQ1024.getData();
-
+    // prepare
+    results.timestamp = millis();
     results.setupData = this->setupData;
-    results.process(pointer, config.noiseFloorDistance_threshold, speedConversion);
+    results.pedestrianAmplitude = 0.0;
+
+    // do stuff
+    results.process(fft_IQ1024.getData(), config.noiseFloorDistance_threshold, speedConversion);
+
+    // use and update history
+    useAndUpdateHistory(results, this->history);
 }
 
 void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThreshold, float speedConversion)
 {
-    for(size_t kk = 0; kk < AudioSystem::fftWidth; kk++)
-        spectrum[kk] = *(pointer + kk);
-
-    int smooth_n = 1000; // number of samples used for smoothing the spectrum
+    // int smooth_n = 1000; // number of samples used for smoothing the spectrum
     for(size_t i = 0; i < AudioSystem::fftWidth; i++)
     {
-        spectrumSmoothed[i] = ((smooth_n - 1) * spectrumSmoothed[i] + spectrum[i]) / smooth_n;
+        spectrum[i] = pointer[i];
+        // spectrumSmoothed[i] = ((smooth_n - 1) * spectrumSmoothed[i] + spectrum[i]) / smooth_n;
         noiseFloorDistance[i] = spectrum[i] - global_noiseFloor[i];
     }
 
@@ -98,7 +105,7 @@ void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThres
         if(reverseValue > noiseFloorDistanceThreshold)
             reverse.binsWithSignal++;
 
-        // with noiseFloorDistance[i] > noiseFloorDistance[1024-i] make shure that the signal is in the right
+        // with noiseFloorDistance[i] > noiseFloorDistance[1024-i] make sure that the signal is in the right
         // direction
         if(forwardValue > reverseValue && forwardValue > forward.amplitudeMax)
         {
@@ -137,6 +144,12 @@ void AudioSystem::updateIQ(Config const& config)
     Q_mixer.gain(1, D);
 }
 
+void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& history)
+{
+    results.forward.runningMeanAmp = history.runningMeanForward.add(results.forward.meanAmplitude);
+    results.reverse.runningMeanAmp = history.runningMeanReverse.add(results.reverse.meanAmplitude);
+}
+
 AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)
 {
     micGain = other.micGain;
@@ -144,4 +157,15 @@ AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)
     psi = other.psi;
 
     return *this;
+}
+
+RunningMean::RunningMean(size_t n, float initialValue)
+    : n{n}
+    , value(initialValue)
+{}
+
+float RunningMean::add(float newValue)
+{
+    value = 1 / n * ((n - 1) * value + newValue);
+    return value;
 }

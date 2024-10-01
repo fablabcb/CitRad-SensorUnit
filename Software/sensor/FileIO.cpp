@@ -62,11 +62,11 @@ bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const
             ok = rawFile.write((byte*)&audioResults.spectrum[i], dataSize);
 
         if(not ok)
-            return;
+            return false;
     }
 
     static const uint32_t endMarker = ~0; // all ones; will be NaN in float
-    if(rawFile.write(&count, 4) != 4)
+    if(rawFile.write(&endMarker, 4) != 4)
         return false;
 
     rawFile.flush();
@@ -101,6 +101,10 @@ bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
     csvFile.print(audioResults.reverse.binsWithSignal);
     csvFile.print(", ");
     csvFile.println(audioResults.pedestrianAmplitude);
+    csvFile.print(", ");
+    csvFile.println(audioResults.forward.runningMeanAmp); // dynamic_noise_level
+    csvFile.print(", ");
+    csvFile.println(audioResults.reverse.runningMeanAmp); // dynamic_noise_level_reverse
     csvFile.flush();
 
     return true;
@@ -158,9 +162,10 @@ bool FileIO::openCsvFile(Config const& config)
         Serial.println("(E) Failed to open new csv file");
         return false;
     }
-    csvFile.println("timestamp, speed, speed_reverse, strength, strength_reverse, "
-                    "meanAmplitude, meanAmplitude_reverse, binsWithSignal, "
-                    "binsWithSignal_reverse, pedestrian_meanAmplitude");
+    csvFile.println(
+        "timestamp, speed, speed_reverse, strength, strength_reverse, "
+        "meanAmplitude, meanAmplitude_reverse, binsWithSignal, "
+        "binsWithSignal_reverse, pedestrian_meanAmplitude, dynamic_noise_level, dynamic_noise_level_reverse");
     csvFile.flush();
 
     csvFileCreation = std::chrono::steady_clock::now();
