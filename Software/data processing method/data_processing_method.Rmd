@@ -35,7 +35,11 @@ rm(data_list)
 
 ```{r read binary file}
 #data_list <- read_binary_file_8bit("../data/SD-Card/2024-09-23_TFZ/rawdata_2019-1-1_0-0-0.BIN")
-data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-25_TFZ/rawdata_2019-1-1_0-2-50.BIN")
+#data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-25_TFZ/rawdata_2019-1-1_0-2-50.BIN")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_08-43-23.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_08-46-35.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_09-46-35.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_10-46-35.bin")
 ```
 
 
@@ -51,8 +55,8 @@ speeds <- (1:1024-512) * speed_conversion
 abs_speed_above_10 <- abs(speeds) >= 10
 speed_above_10 <- speeds >= 10
 speed_below_10 <- speeds <= 10
-
 abs_speed_below_50 <- abs(speeds) <= 50
+
 #data_50 <- data[,abs_speed_below_50] 
 timestamps_date <- start_time + milliseconds(timestamps)
 timestamp_minutes = timestamps/1000/60
@@ -64,7 +68,11 @@ noise_floor_normalized <- noise_floor - median(noise_floor)
 # mean amplitude
 
 ```{r}
-mean_amplitude <- data[, abs_speed_above_10] %>% future_apply(1, mean)
+max_trigger_speed <- 50
+pedestrian_speed <- 10
+
+mean_amplitude <- data[, abs(speeds)>pedestrian_speed] %>% future_apply(1, mean)
+mean_amplitude_max_trigger <- data[, (abs(speeds)>pedestrian_speed & abs(speeds)<max_trigger_speed)] %>% future_apply(1, mean)
 mean_amplitude_for <- data[, speeds > 0] %>% future_apply(1, mean)
 mean_amplitude_rev <- data[, speeds < 0] %>% future_apply(1, mean)
 ```
@@ -135,6 +143,7 @@ signal$relative_signal_strength_rev <- signal$signal_strength_rev - dynamic_nois
 
 ```{r detect signal}
 signal_threshold = 20
+
 signal$signal_detected_for <- signal$relative_signal_strength_for > signal_threshold
 signal$signal_detected_rev <- signal$relative_signal_strength_rev > signal_threshold
 signal$speed_for[!signal$signal_detected_for] <- NA
@@ -142,21 +151,26 @@ signal$speed_rev[!signal$signal_detected_rev] <- NA
 ```
 
 
+
+
 # car trigger signal
 
 ```{r}
-n = car_trigger_signal_smoothing_factor = 31
+n = car_trigger_signal_smoothing_factor = 61
 
-car_trigger_signal <- runner(mean_amplitude, f=weighted.mean, k=n, lag=-(n-1)/2, w=dnorm((-(n-1)/2):((n-1)/2),sd=(n-1)/8), na_pad = T)
+car_trigger_signal <- runner(mean_amplitude_max_trigger, f=weighted.mean, k=n, lag=-(n-1)/2, w= dnorm((-(n-1)/2):((n-1)/2),sd=(n-1)/8), na_pad = T)
 
 car_trigger_direction_signal <- c(NA, diff(car_trigger_signal))
 ```
 
 
+
+
+
 # calc car statistics
 
 ```{r calc car statistic}
-diff_threshold <- 5/30
+diff_threshold <- 0.1
 trigger_start <- NA
 trigger_start_shorter <- NA
 trigger_end <- NA
@@ -196,7 +210,8 @@ while(i <= length(car_trigger_direction_signal)){
       i=i+1
     }
     
-    if(trigger_max > -trigger_min &  (trigger_end - trigger_start)>10){
+    if(trigger_max > -trigger_min ){
+      #&  (trigger_end - trigger_start)>10
       cars$forward$trigger_start[j] <- trigger_start
       cars$forward$trigger_end[j] <- trigger_end
       cars$forward$trigger_length[j] <- trigger_end - trigger_start
@@ -211,9 +226,10 @@ while(i <= length(car_trigger_direction_signal)){
       cars$forward$car_length[j-1] = round(cars$forward$car_speed[j-1] * cars$forward$trigger_duration[j-1] /3600)
       j = j+1
     }
-    if(trigger_max < -trigger_min &  (trigger_end - trigger_start_shorter)>10){
-      # max_speeds["max_i",trigger_start:trigger_end] <- NA
-      # max_speeds["max_i_rev",trigger_start_shorter:trigger_end] <- NA
+    
+    if(trigger_max < -trigger_min){
+      #&  (trigger_end - trigger_start_shorter)>10
+      
       cars$reverse$trigger_start[k] = trigger_start_shorter
       cars$reverse$trigger_end[k] <- trigger_end
       cars$reverse$trigger_length[k] <- trigger_end - trigger_start_shorter
@@ -245,6 +261,7 @@ index <- 76200:77800
 index <- 2000:4000
 index <- 3000:1.25e+5/4
 index <- 3000:1.25e+5/2
+index <- 1:nrow(data_flattened)
 
 tick_positions <- seq(min(index), max(index), length.out=200)
 tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
@@ -294,5 +311,15 @@ dev.off()
 ```{r}
 detach(data_list)
 rm(data_list)
+```
+
+```{r}
+hist(cars$forward$car_speed[cars$forward$car_speed>2], breaks = 0:70)
+hist(-cars$reverse$car_speed[cars$forward$car_speed>2], breaks = 0:70)
+```
+
+```{r}
+hist(cars$forward$car_length[cars$forward$car_length>2], breaks=1:40)
+hist(cars$reverse$car_length[cars$reverse$car_length>2], breaks=1:40)
 ```
 
