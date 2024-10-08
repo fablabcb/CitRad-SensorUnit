@@ -92,9 +92,9 @@ bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
     csvFile.print(", ");
     csvFile.print(audioResults.reverse.amplitudeMax);
     csvFile.print(", ");
-    csvFile.print(audioResults.forward.meanAmplitude);
+    csvFile.print(audioResults.forward.signalStrength);
     csvFile.print(", ");
-    csvFile.print(audioResults.reverse.meanAmplitude);
+    csvFile.print(audioResults.reverse.signalStrength);
     csvFile.print(", ");
     csvFile.print(audioResults.forward.binsWithSignal);
     csvFile.print(", ");
@@ -102,9 +102,9 @@ bool FileIO::writeCsvData(AudioSystem::Results const& audioResults, Config const
     csvFile.print(", ");
     csvFile.print(audioResults.pedestrianAmplitude);
     csvFile.print(", ");
-    csvFile.print(audioResults.forward.runningMeanAmp); // dynamic_noise_level
+    csvFile.print(audioResults.forward.dynamicNoiseLevel);
     csvFile.print(", ");
-    csvFile.print(audioResults.reverse.runningMeanAmp); // dynamic_noise_level_reverse
+    csvFile.print(audioResults.reverse.dynamicNoiseLevel);
     csvFile.print(", ");
     csvFile.print(audioResults.forward.carTriggerSignal);
     csvFile.print(", ");

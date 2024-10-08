@@ -1,6 +1,7 @@
 #include "Config.hpp"
 
 #include <charconv>
+#include <cstdlib>
 #include <functional>
 #include <vector>
 
@@ -39,6 +40,18 @@ void Config::process(std::map<std::string, std::string> const& map)
         }
         return false;
     };
+    auto parseFloat = [](std::string const& value, float& result) -> bool {
+        if(value.size() == 0)
+            return false;
+
+        auto const cstr = value.c_str();
+        char* endPtr = nullptr;
+        result = strtod(cstr, &endPtr);
+        if(*endPtr != '\0')
+            return false;
+
+        return true;
+    };
     auto parseSize = [](std::string const& value, size_t& result) -> bool {
         auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), result);
         return ec == std::errc{};
@@ -55,9 +68,15 @@ void Config::process(std::map<std::string, std::string> const& map)
     run<bool>(parseBool, "writeCsvData", this->writeCsvData, mapCpy);
     run<bool>(parseBool, "splitLargeFiles", this->splitLargeFiles, mapCpy);
 
+    run<float>(parseFloat, "signalStrengthThreshold", this->audio.signalStrengthThreshold, mapCpy);
+    run<float>(parseFloat, "carSignalThreshold", this->audio.carSignalThreshold, mapCpy);
+
     run<size_t>(parseSize, "maxSecondsPerFile", this->maxSecondsPerFile, mapCpy);
     run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->audio.runningMeanHistoryN, mapCpy);
     run<size_t>(parseSize, "carTriggerSignalSmoothingFactor", this->audio.hannWindowN, mapCpy);
+    run<size_t>(parseSize, "carSignalLengthMinimum", this->audio.carSignalLengthMinimum, mapCpy);
+    run<size_t>(parseSize, "carSignalBufferLength", this->audio.carSignalBufferLength, mapCpy);
+
     run<std::string>(parseString, "filePrefix", this->filePrefix, mapCpy);
 
     if(mapCpy.size() > 0)

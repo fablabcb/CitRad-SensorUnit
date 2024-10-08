@@ -1,6 +1,7 @@
 #include "AudioSystem.h"
 
 #include <TimeLib.h>
+#include <cmath>
 
 #include "noise_floor.h"
 
@@ -54,11 +55,13 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
         setupData.numberOfFftBins = rawBinCount;
     }
 
-    history.runningMeanForward = RunningMean(config.runningMeanHistoryN, 0.0f);
-    history.runningMeanReverse = RunningMean(config.runningMeanHistoryN, 0.0f);
+    history.forward.dynamicNoiseLevel = RunningMean(config.runningMeanHistoryN, 0.0f);
+    history.reverse.dynamicNoiseLevel = RunningMean(config.runningMeanHistoryN, 0.0f);
 
-    history.smoothedAmpForward = HannWindowSmoothing(config.hannWindowN);
-    history.smoothedAmpReverse = HannWindowSmoothing(config.hannWindowN);
+    history.forward.carTriggerSignal = HannWindowSmoothing(config.hannWindowN);
+    history.reverse.carTriggerSignal = HannWindowSmoothing(config.hannWindowN);
+
+    history.speeds = RingBuffer<float>{config.carSignalBufferLength, ~0};
 }
 
 void AudioSystem::processData(Results& results)
@@ -83,6 +86,10 @@ void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThres
         noiseFloorDistance[i] = spectrum[i] - global_noiseFloor[i];
     }
 
+    // TODO adjust this to:
+    // use entire range for noise floor
+    // use -50km/h to +50km/h for meanAmp
+
     forward = reverse = Data{};
 
     // detect pedestrians
@@ -98,11 +105,11 @@ void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThres
         float& forwardValue = noiseFloorDistance[i];
         float& reverseValue = noiseFloorDistance[AudioSystem::fftWidth - i];
 
-        forward.meanAmplitude += forwardValue;
+        forward.signalStrength += forwardValue;
         if(forwardValue > noiseFloorDistanceThreshold)
             forward.binsWithSignal++;
 
-        reverse.meanAmplitude += reverseValue;
+        reverse.signalStrength += reverseValue;
         if(reverseValue > noiseFloorDistanceThreshold)
             reverse.binsWithSignal++;
 
@@ -124,8 +131,8 @@ void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThres
 
     // TODO: is this valid when working with dB values?
     auto const binCount = setupData.maxBinIndex - usedBinsStartIdx;
-    forward.meanAmplitude /= binCount;
-    reverse.meanAmplitude /= binCount;
+    forward.signalStrength /= binCount;
+    reverse.signalStrength /= binCount;
 }
 
 bool AudioSystem::hasData()
@@ -147,12 +154,149 @@ void AudioSystem::updateIQ(Config const& config)
 
 void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& history)
 {
-    results.forward.runningMeanAmp = history.runningMeanForward.add(results.forward.meanAmplitude);
-    results.reverse.runningMeanAmp = history.runningMeanReverse.add(results.reverse.meanAmplitude);
+    std::optional<History::Trigger> resultTrigger;
 
-    // TODO: this could be limited to a mean amp covering 0-50km/h only
-    results.forward.carTriggerSignal = history.smoothedAmpForward.add(results.forward.meanAmplitude);
-    results.reverse.carTriggerSignal = history.smoothedAmpReverse.add(results.reverse.meanAmplitude);
+    auto update = [this, &resultTrigger](Results::Data& resultData, AudioSystem::History::Data& historyData) {
+        resultData.dynamicNoiseLevel = historyData.dynamicNoiseLevel.add(resultData.signalStrength);
+
+        // TODO: this could be limited to a mean amp covering 0-50km/h only
+        float tmp = historyData.carTriggerSignal.get();
+        resultData.carTriggerSignal = historyData.carTriggerSignal.add(resultData.signalStrength);
+
+        // if there is no value in the buffer, we just got our first measurement in and can end here
+        if(std::isnan(tmp))
+            return;
+
+        float const carTriggerSignalDiff = resultData.signalStrength - tmp;
+
+        auto& signalScan = historyData.signalScan;
+        // if we are not in any collection phase, we are waiting for a strong signal to occur
+        if(signalScan.isCollecting == false)
+        {
+            if(carTriggerSignalDiff < config.carSignalThreshold)
+                return;
+
+            signalScan = History::SignalScan{};
+            signalScan.isCollecting = true; // yes, go ahead
+            signalScan.collectMax = true;   // select the maximum first
+            signalScan.collectMin = false;  // and the minimum not quiet yet
+            signalScan.startOffset = 0;
+        }
+
+        if(signalScan.collectMax)
+        {
+            if(carTriggerSignalDiff >= 0)
+            {
+                signalScan.startOffset++;
+
+                if(carTriggerSignalDiff > signalScan.maxSignal)
+                {
+                    signalScan.maxSignal = carTriggerSignalDiff;
+                    signalScan.maxOffset = 0;
+                }
+            }
+            else
+            {
+                signalScan.collectMax = false;
+                signalScan.collectMin = true;
+                signalScan.endOffset = 0;
+            }
+        }
+
+        if(signalScan.collectMin)
+        {
+            if(carTriggerSignalDiff <= 0)
+            {
+                signalScan.endOffset++;
+
+                if(carTriggerSignalDiff < signalScan.minSignal)
+                {
+                    signalScan.minSignal = carTriggerSignalDiff;
+                    signalScan.minOffset = 0;
+                }
+            }
+            else
+            {
+                signalScan.isCollecting = false;
+            }
+        }
+
+        // we are not done collecting yet
+        if(signalScan.isCollecting)
+            return;
+
+        // note: Due to the way they are started, both signalScan.startOffset and signalScan.endOffset are one too heigh
+
+        bool isLongEnough = (signalScan.minOffset - signalScan.maxOffset) > config.carSignalLengthMinimum;
+        if(not isLongEnough)
+            return;
+
+        bool isForwardSignal = std::abs(signalScan.maxSignal) > std::abs(signalScan.minSignal);
+
+        History::Trigger trigger;
+        trigger.isForward = isForwardSignal;
+        trigger.sampleCount = signalScan.startOffset - signalScan.endOffset;
+
+        resultTrigger = trigger;
+    };
+
+    if(history.hasPastTrigger)
+        history.lastTriggerAge++;
+
+    {
+        float const relativeSignal = results.forward.signalStrength - results.forward.dynamicNoiseLevel;
+        bool const considerAsSignal = relativeSignal > config.signalStrengthThreshold;
+
+        history.speeds.set(considerAsSignal ? relativeSignal : ~0); // ~0 is naN
+    }
+
+    update(results.reverse, history.reverse);
+    // we will only have one trigger in the end .. wait until the process function has been altered
+    resultTrigger.reset();
+
+    update(results.forward, history.forward);
+
+    // let's see if we have any unfinished business
+    bool needToFinalizePendingTrigger =
+        history.activeIncompleteTrigger.has_value() &&
+        (resultTrigger.has_value() || history.lastTriggerAge >= config.carSignalBufferLength);
+    if(needToFinalizePendingTrigger)
+    {
+        size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastTriggerAge);
+        history.activeIncompleteTrigger.value().speeds = history.speeds.getLastN(valuesToUse);
+        finalizeAndStore(history.activeIncompleteTrigger.value());
+        history.activeIncompleteTrigger.reset();
+    }
+
+    if(resultTrigger.has_value())
+    {
+        auto& trigger = resultTrigger.value();
+        trigger.timestamp = results.timestamp;
+        trigger.speeds.reserve(config.carSignalBufferLength);
+
+        if(trigger.isForward)
+        {
+            history.activeIncompleteTrigger = std::move(resultTrigger);
+        }
+        else
+        {
+            size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastTriggerAge);
+            trigger.speeds = history.speeds.getLastN(valuesToUse);
+            finalizeAndStore(trigger);
+        }
+
+        history.hasPastTrigger = true;
+        history.lastTriggerAge = 0;
+    }
+}
+
+void AudioSystem::finalizeAndStore(History::Trigger& trigger)
+{
+    // the speeds vector will contain naNs which we need to filter out
+    auto speeds = filterValid(trigger.speeds);
+    trigger.medianSpeed = getAlmostMedian(speeds);
+
+    // TODO save
 }
 
 AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)

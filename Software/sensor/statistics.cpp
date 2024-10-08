@@ -1,5 +1,6 @@
 #include "statistics.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -24,7 +25,8 @@ HannWindowSmoothing::HannWindowSmoothing(size_t size)
     for(size_t i = 0; i < n; i++)
         window[i] = 0.5 - 0.5 * cos(2 * M_PI * i / (n - 1));
 
-    buffer = RingBuffer(n);
+    float const nan = ~0;
+    buffer = RingBuffer(n, nan);
 }
 
 float HannWindowSmoothing::add(float newValue)
@@ -33,34 +35,31 @@ float HannWindowSmoothing::add(float newValue)
     buffer.incrementIndex();
 
     float result = 0.0f;
-    for(int i = 0; i < n; i++)
+    for(size_t i = 0; i < n; i++)
         result += window[i] * buffer.get(i);
 
     return result / ((n - 1) / 2);
 }
 
-RingBuffer::RingBuffer(size_t size)
+float HannWindowSmoothing::get()
 {
-    if(size % 2 == 0)
-        size += 1;
-
-    buffer.resize(size);
+    return buffer.get(0);
 }
 
-float RingBuffer::get(size_t offset) const
+float getAlmostMedian(std::vector<float>& data)
 {
-    return buffer[(index + offset) % buffer.size()];
+    if(data.empty())
+        return ~0; // naN
+
+    size_t const index = data.size() / 2;
+    std::nth_element(data.begin(), data.begin() + index, data.end());
+    return data[index];
 }
 
-void RingBuffer::set(float value)
+std::vector<float> filterValid(const std::vector<float>& data)
 {
-    buffer[index] = value;
-}
+    std::vector<float> result;
+    std::copy_if(data.begin(), data.end(), std::back_inserter(result), [](float const& f) { return std::isnan(f); });
 
-void RingBuffer::incrementIndex()
-{
-    if(index + 1 >= buffer.size())
-        index = 0;
-    else
-        index += 1;
+    return result;
 }

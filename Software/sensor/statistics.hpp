@@ -4,19 +4,42 @@
 #include <cstddef>
 #include <vector>
 
+template <class T>
 class RingBuffer
 {
   public:
     RingBuffer() = default;
-    RingBuffer(size_t size);
+    RingBuffer(size_t size, T const& initialValue)
+    {
+        if(size % 2 == 0)
+            size += 1;
 
-    float get(size_t offset) const;
-    void set(float value);
-    void incrementIndex();
+        buffer.resize(size, initialValue);
+    }
+
+    T get(size_t offset) const { return buffer[(index + offset) % buffer.size()]; }
+
+    void set(T value) { buffer[index] = value; }
+
+    void incrementIndex()
+    {
+        if(index + 1 >= buffer.size())
+            index = 0;
+        else
+            index += 1;
+    }
+
+    std::vector<T> getLastN(size_t count)
+    {
+        std::vector<T> result(std::min(count, buffer.size()));
+        for(size_t i = 0; i < count; i++)
+            result[i] = get(i);
+        return result;
+    }
 
   private:
-    std::vector<float> buffer;
-    signed int index = 0;
+    std::vector<T> buffer;
+    size_t index = 0;
 };
 
 class RunningMean
@@ -38,12 +61,21 @@ class HannWindowSmoothing
     HannWindowSmoothing() = default;
     HannWindowSmoothing(size_t n);
 
+    // add new value
     float add(float newValue);
+
+    // get current value
+    float get();
 
   private:
     size_t n;
     std::vector<float> window;
-    RingBuffer buffer;
+    RingBuffer<float> buffer;
 };
+
+// not exactly median since we do not average out 2 values if the number of items is even
+float getAlmostMedian(std::vector<float>& data);
+
+std::vector<float> filterValid(std::vector<float> const& data);
 
 #endif
