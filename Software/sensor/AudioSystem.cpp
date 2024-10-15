@@ -16,7 +16,7 @@ AudioSystem::AudioSystem()
     , patchCord7(linein, 1, headphone, 1)
 {}
 
-void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSpeed, float maxSpeedToUse)
+void AudioSystem::setup(AudioSystem::Config const& config)
 {
     this->config = config;
 
@@ -37,45 +37,61 @@ void AudioSystem::setup(AudioSystem::Config const& config, float maxPedestrianSp
     fft_IQ1024.setXAxis(3);
 
     speedConversion = 1.0 * (config.sampleRate / AudioSystem::fftWidth) / 44.0; // conversion from Hz to km/h
-    setupData.pedestriansBinMax = maxPedestrianSpeed / speedConversion;         // convert maxPedestrianSpeed to bin
-    uint16_t rawBinCount = (uint16_t)min(AudioSystem::fftWidth / 2, maxSpeedToUse / speedConversion);
+    uint16_t rawBinCount = (uint16_t)min(AudioSystem::fftWidth / 2, config.maxTotalSpeed / speedConversion);
 
-    // IQ = symetric FFT
-    if(config.isIqMeasurement)
-    {
-        setupData.iqOffset = AudioSystem::fftWidth / 2; // new middle point
-        setupData.numberOfFftBins = rawBinCount * 2;    // send both sides; not only one
-        setupData.maxBinIndex = setupData.numberOfFftBins;
-        setupData.minBinIndex = (AudioSystem::fftWidth - setupData.maxBinIndex);
-    }
-    else
-    {
-        setupData.iqOffset = 0;
-        setupData.minBinIndex = 0;
-        setupData.numberOfFftBins = rawBinCount;
-    }
+    // note for IQ: bins[511] is the mean value and not used here; because of that we would have one more value in the
+    // forward direction which we are going to ignore instead. This then leads to having a symetric range.
+    setupData.binsToProcess.from = 0;
+    setupData.binsToProcess.to = config.isIqMeasurement ? rawBinCount - 1 : rawBinCount;
 
-    history.forward.dynamicNoiseLevel = RunningMean(config.runningMeanHistoryN, 0.0f);
-    history.reverse.dynamicNoiseLevel = RunningMean(config.runningMeanHistoryN, 0.0f);
+    // Note: IQ = symetric FFT; middle point or offset = 511 for FFT(1024)
+    setupData.iqOffset = config.isIqMeasurement ? AudioSystem::fftWidth / 2 - 1 : 0;
 
-    history.forward.carTriggerSignal = HannWindowSmoothing(config.hannWindowN);
-    history.reverse.carTriggerSignal = HannWindowSmoothing(config.hannWindowN);
+    uint16_t pedBinCount = config.maxPedestrianSpeed / speedConversion;
+    uint16_t noiseLevelBinMin = config.noiseLevelMinSpeed / speedConversion;
+    uint16_t carBinMax = config.maxCarSpeed / speedConversion;
 
-    history.speeds = RingBuffer<float>{config.carSignalBufferLength, ~0};
+    setupData.pedestrianBins.from = 3; // magic number
+    setupData.pedestrianBins.to = std::min(pedBinCount, rawBinCount);
+
+    setupData.noiseLevelBins.from = std::min(noiseLevelBinMin, rawBinCount);
+    setupData.noiseLevelBins.to = rawBinCount;
+
+    setupData.carBins.from = std::min(pedBinCount, rawBinCount);
+    setupData.carBins.to = std::min(carBinMax, rawBinCount);
+
+    history.dynamicNoiseLevel = RunningMean(config.runningMeanHistoryN, 0.0f);
+    history.carTriggerSignal = HannWindowSmoothing(config.hannWindowN);
+    history.speeds = RingBuffer<float>{config.carSignalBufferLength, std::numeric_limits<float>::quiet_NaN()};
+
+    // Serial.println(setupData.carBinMax);   // as of now 200
+    // Serial.println(setupData.minBinIndex); // 0
+    // Serial.println(setupData.maxBinIndex); // 1023
 }
 
 void AudioSystem::processData(Results& results)
 {
     // prepare
-    results.timestamp = millis();
-    results.setupData = this->setupData;
-    results.pedestrianAmplitude = 0.0;
+    results.reset(millis(), this->setupData);
 
     // do stuff
     results.process(fft_IQ1024.getData(), config.noiseFloorDistance_threshold, speedConversion);
 
     // use and update history
     useAndUpdateHistory(results, this->history);
+}
+
+void AudioSystem::Results::reset(unsigned long timestamp, SetupData const& setupData)
+{
+    this->timestamp = timestamp;
+    this->setupData = setupData;
+
+    forward = reverse = DirectionalData{};
+    data = CommonData{};
+    completedForwardDetection.reset();
+    completedReverseDetection.reset();
+
+    // do not touch noiseFloorDistance and spectrum, since they are expensive and overwritten for sure
 }
 
 void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThreshold, float speedConversion)
@@ -86,53 +102,54 @@ void AudioSystem::Results::process(float* pointer, float noiseFloorDistanceThres
         noiseFloorDistance[i] = spectrum[i] - global_noiseFloor[i];
     }
 
-    // TODO adjust this to:
-    // use entire range for noise floor
-    // use -50km/h to +50km/h for meanAmp
-
-    forward = reverse = Data{};
-
-    // detect pedestrians
-    pedestrianAmplitude = 0.0;
-    for(size_t i = 3 + setupData.iqOffset; i < setupData.pedestriansBinMax + setupData.iqOffset; i++)
-        pedestrianAmplitude += spectrum[i];
-    pedestrianAmplitude /= setupData.pedestriansBinMax;
-
-    // detect faster things
-    size_t const usedBinsStartIdx = (setupData.pedestriansBinMax + 1 + setupData.iqOffset);
-    for(size_t i = usedBinsStartIdx; i < setupData.maxBinIndex; i++)
+    // detect pedestrians - this is somewhat different to the other calculations
+    float sum = 0.0;
+    if(setupData.pedestrianBins.count() > 0)
     {
-        float& forwardValue = noiseFloorDistance[i];
-        float& reverseValue = noiseFloorDistance[AudioSystem::fftWidth - i];
+        for(size_t i = setupData.pedestrianBins.from; i <= setupData.pedestrianBins.to; i++)
+            sum += spectrum[setupData.iqOffset + i];
+        data.meanAmplitudeForPedestrians = sum / setupData.pedestrianBins.count();
+    }
 
-        forward.signalStrength += forwardValue;
-        if(forwardValue > noiseFloorDistanceThreshold)
-            forward.binsWithSignal++;
+    uint16_t maxAmplitudeBinForward = 0;
+    uint16_t maxAmplitudeBinReverse = 0;
+    bool const doReverse = setupData.iqOffset > 0; // same as config.isIqMeasurement
+    for(size_t i = setupData.binsToProcess.from; i <= setupData.binsToProcess.to; i++)
+    {
+        float const forwardValue = noiseFloorDistance[setupData.iqOffset + 1 + i]; // from 512 to 1022 = 510 values
+        float const reverseValue = doReverse ? noiseFloorDistance[setupData.iqOffset - i - 1] : 0;
 
-        reverse.signalStrength += reverseValue;
-        if(reverseValue > noiseFloorDistanceThreshold)
-            reverse.binsWithSignal++;
+        if(setupData.noiseLevelBins.contains(i))
+            data.meanAmplitudeForNoiseLevel += forwardValue + reverseValue;
 
-        // with noiseFloorDistance[i] > noiseFloorDistance[1024-i] make sure that the signal is in the right
-        // direction
-        if(forwardValue > reverseValue && forwardValue > forward.amplitudeMax)
+        if(setupData.carBins.contains(i))
         {
-            forward.amplitudeMax = forwardValue; // remember highest amplitude
-            forward.maxFrequencyIdx = i;         // remember frequency index
-        }
-        if(reverseValue > forwardValue && reverseValue > forward.amplitudeMax)
-        {
-            reverse.amplitudeMax = reverseValue; // remember highest amplitude
-            reverse.maxFrequencyIdx = i;         // remember frequency index
+            data.meanAmplitudeForCars += forwardValue + reverseValue;
+
+            if(forwardValue > noiseFloorDistanceThreshold)
+                forward.binsWithSignal++;
+            if(reverseValue > noiseFloorDistanceThreshold)
+                reverse.binsWithSignal++;
+
+            // the value has to be greater than the ghost signal on the other side to be considered
+            if(forwardValue > reverseValue && forwardValue > forward.maxAmplitude)
+            {
+                forward.maxAmplitude = forwardValue; // remember highest amplitude
+                maxAmplitudeBinForward = i;          // remember frequency index
+            }
+            if(reverseValue > forwardValue && reverseValue > reverse.maxAmplitude)
+            {
+                reverse.maxAmplitude = reverseValue; // remember highest amplitude
+                maxAmplitudeBinReverse = i;          // remember frequency index
+            }
         }
     }
-    forward.detectedSpeed = (forward.maxFrequencyIdx - setupData.iqOffset) * speedConversion;
-    reverse.detectedSpeed = (reverse.maxFrequencyIdx - setupData.iqOffset) * speedConversion;
+    forward.detectedSpeed = maxAmplitudeBinForward * speedConversion;
+    reverse.detectedSpeed = maxAmplitudeBinReverse * speedConversion;
 
     // TODO: is this valid when working with dB values?
-    auto const binCount = setupData.maxBinIndex - usedBinsStartIdx;
-    forward.signalStrength /= binCount;
-    reverse.signalStrength /= binCount;
+    data.meanAmplitudeForNoiseLevel /= (setupData.noiseLevelBins.count() * (doReverse ? 2 : 1));
+    data.meanAmplitudeForCars /= (setupData.carBins.count() * (doReverse ? 2 : 1));
 }
 
 bool AudioSystem::hasData()
@@ -154,41 +171,55 @@ void AudioSystem::updateIQ(Config const& config)
 
 void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& history)
 {
-    std::optional<History::Trigger> resultTrigger;
+    results.data.dynamicNoiseLevel = history.dynamicNoiseLevel.add(results.data.meanAmplitudeForNoiseLevel);
 
-    auto update = [this, &resultTrigger](Results::Data& resultData, AudioSystem::History::Data& historyData) {
-        resultData.dynamicNoiseLevel = historyData.dynamicNoiseLevel.add(resultData.signalStrength);
+    float lastCarSignal = history.carTriggerSignal.get();
+    results.data.carTriggerSignal = history.carTriggerSignal.add(results.data.meanAmplitudeForCars);
 
-        // TODO: this could be limited to a mean amp covering 0-50km/h only
-        float tmp = historyData.carTriggerSignal.get();
-        resultData.carTriggerSignal = historyData.carTriggerSignal.add(resultData.signalStrength);
+    // Serial.print("last: ");
+    // Serial.println(lastCarSignal);
+    // Serial.print("mean: ");
+    // Serial.println(results.data.meanAmplitudeForCars);
 
+    auto scan =
+        [this, &history, lastCarSignal](Results::CommonData const& data) -> std::optional<Results::ObjectDetection> {
         // if there is no value in the buffer, we just got our first measurement in and can end here
-        if(std::isnan(tmp))
-            return;
+        if(std::isnan(lastCarSignal))
+            return {};
 
-        float const carTriggerSignalDiff = resultData.signalStrength - tmp;
+        float const carTriggerSignalDiff = data.carTriggerSignal - lastCarSignal;
 
-        auto& signalScan = historyData.signalScan;
-        // if we are not in any collection phase, we are waiting for a strong signal to occur
+        auto& signalScan = history.signalScan;
+        // FLOW: if we are not in any collection phase, we are waiting for a strong signal to occur
         if(signalScan.isCollecting == false)
         {
-            if(carTriggerSignalDiff < config.carSignalThreshold)
-                return;
+            if(carTriggerSignalDiff < this->config.carSignalThreshold)
+                return {};
 
+            // Serial.print("delta: ");
+            // Serial.println(carTriggerSignalDiff);
+
+            // FLOW: we got a big enough difference over the threshold to start collecting data
             signalScan = History::SignalScan{};
             signalScan.isCollecting = true; // yes, go ahead
             signalScan.collectMax = true;   // select the maximum first
-            signalScan.collectMin = false;  // and the minimum not quiet yet
+            signalScan.collectMin = false;  // but not the minimum quiet yet
             signalScan.startOffset = 0;
         }
+        else
+        {
+            // age all offsets; even if they are not set yet
+            signalScan.startOffset++;
+            signalScan.endOffset++;
+            signalScan.maxOffset++;
+            signalScan.minOffset++;
+        }
 
+        // FLOW: we are looking for the maximum now
         if(signalScan.collectMax)
         {
             if(carTriggerSignalDiff >= 0)
             {
-                signalScan.startOffset++;
-
                 if(carTriggerSignalDiff > signalScan.maxSignal)
                 {
                     signalScan.maxSignal = carTriggerSignalDiff;
@@ -197,18 +228,17 @@ void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& hi
             }
             else
             {
+                // FLOW: change to looking for the minimum now
                 signalScan.collectMax = false;
                 signalScan.collectMin = true;
-                signalScan.endOffset = 0;
             }
         }
 
+        // FLOW: we are looking for the minimum now
         if(signalScan.collectMin)
         {
-            if(carTriggerSignalDiff <= 0)
+            if(carTriggerSignalDiff < 0)
             {
-                signalScan.endOffset++;
-
                 if(carTriggerSignalDiff < signalScan.minSignal)
                 {
                     signalScan.minSignal = carTriggerSignalDiff;
@@ -217,86 +247,92 @@ void AudioSystem::useAndUpdateHistory(Results& results, AudioSystem::History& hi
             }
             else
             {
+                // FLOW: we are back to positive values. Stop collecting.
                 signalScan.isCollecting = false;
+                signalScan.endOffset = 0;
             }
         }
 
-        // we are not done collecting yet
+        // FLOW: we are not done collecting yet
         if(signalScan.isCollecting)
-            return;
+            return {};
 
-        // note: Due to the way they are started, both signalScan.startOffset and signalScan.endOffset are one too heigh
-
-        bool isLongEnough = (signalScan.minOffset - signalScan.maxOffset) > config.carSignalLengthMinimum;
+        // FLOW: we can continue with the result analysis
+        bool isLongEnough = (signalScan.maxOffset - signalScan.minOffset + 1) >= config.carSignalLengthMinimum;
         if(not isLongEnough)
-            return;
+            return {};
 
         bool isForwardSignal = std::abs(signalScan.maxSignal) > std::abs(signalScan.minSignal);
 
-        History::Trigger trigger;
-        trigger.isForward = isForwardSignal;
-        trigger.sampleCount = signalScan.startOffset - signalScan.endOffset;
+        Results::ObjectDetection detection;
+        detection.isForward = isForwardSignal;
+        detection.sampleCount = signalScan.startOffset - signalScan.endOffset + 1;
 
-        resultTrigger = trigger;
+        return detection;
     };
 
-    if(history.hasPastTrigger)
-        history.lastTriggerAge++;
+    if(history.hasPastDetection)
+        history.lastDetectionAge++;
 
     {
-        float const relativeSignal = results.forward.signalStrength - results.forward.dynamicNoiseLevel;
+        float const relativeSignal = results.data.meanAmplitudeForCars - results.data.dynamicNoiseLevel;
         bool const considerAsSignal = relativeSignal > config.signalStrengthThreshold;
 
-        history.speeds.set(considerAsSignal ? relativeSignal : ~0); // ~0 is naN
+        history.speeds.add(considerAsSignal ? relativeSignal : std::numeric_limits<float>::quiet_NaN());
+
+        // Serial.print(considerAsSignal);
+        // Serial.print(" ");
+        Serial.print(history.speeds.get(0));
+        Serial.println(" ");
     }
 
-    update(results.reverse, history.reverse);
-    // we will only have one trigger in the end .. wait until the process function has been altered
-    resultTrigger.reset();
-
-    update(results.forward, history.forward);
+    std::optional<Results::ObjectDetection> newDetection = scan(results.data);
 
     // let's see if we have any unfinished business
-    bool needToFinalizePendingTrigger =
-        history.activeIncompleteTrigger.has_value() &&
-        (resultTrigger.has_value() || history.lastTriggerAge >= config.carSignalBufferLength);
-    if(needToFinalizePendingTrigger)
+    bool needToFinalizePendingDetection =
+        history.incompleteForwardDetection.has_value() &&
+        (newDetection.has_value() || history.lastDetectionAge >= config.carSignalBufferLength);
+    if(needToFinalizePendingDetection)
     {
-        size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastTriggerAge);
-        history.activeIncompleteTrigger.value().speeds = history.speeds.getLastN(valuesToUse);
-        finalizeAndStore(history.activeIncompleteTrigger.value());
-        history.activeIncompleteTrigger.reset();
+        size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastDetectionAge);
+        history.incompleteForwardDetection.value().speeds = history.speeds.getLastN(valuesToUse);
+        finalize(history.incompleteForwardDetection.value());
+        results.completedForwardDetection = std::move(history.incompleteForwardDetection);
+        history.incompleteForwardDetection.reset();
     }
 
-    if(resultTrigger.has_value())
+    if(newDetection.has_value())
     {
-        auto& trigger = resultTrigger.value();
-        trigger.timestamp = results.timestamp;
-        trigger.speeds.reserve(config.carSignalBufferLength);
+        auto& detection = newDetection.value();
+        detection.timestamp = results.timestamp;
+        detection.speeds.reserve(config.carSignalBufferLength);
 
-        if(trigger.isForward)
+        if(detection.isForward)
         {
-            history.activeIncompleteTrigger = std::move(resultTrigger);
+            history.incompleteForwardDetection = std::move(newDetection);
         }
         else
         {
-            size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastTriggerAge);
-            trigger.speeds = history.speeds.getLastN(valuesToUse);
-            finalizeAndStore(trigger);
+            size_t valuesToUse = std::min(config.carSignalBufferLength, history.lastDetectionAge);
+            detection.speeds = history.speeds.getLastN(valuesToUse);
+            finalize(detection);
+            results.completedReverseDetection = std::move(newDetection);
         }
 
-        history.hasPastTrigger = true;
-        history.lastTriggerAge = 0;
+        history.hasPastDetection = true;
+        history.lastDetectionAge = 0;
     }
 }
 
-void AudioSystem::finalizeAndStore(History::Trigger& trigger)
+void AudioSystem::finalize(Results::ObjectDetection& detection)
 {
     // the speeds vector will contain naNs which we need to filter out
-    auto speeds = filterValid(trigger.speeds);
-    trigger.medianSpeed = getAlmostMedian(speeds);
-
-    // TODO save
+    auto speeds = filterValid(detection.speeds);
+    Serial.println("speeds");
+    for(auto const& s : speeds)
+        Serial.print(s);
+    Serial.println("");
+    detection.medianSpeed = getAlmostMedian(speeds);
 }
 
 AudioSystem::Config& AudioSystem::Config::operator=(const Config& other)

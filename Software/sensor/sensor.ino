@@ -34,8 +34,6 @@ void setup()
     pinMode(PIN_A3, OUTPUT); // A3=17, A8=22, A4=18
     digitalWrite(PIN_A4, LOW);
 
-    audio.setup(config.audio, config.maxPedestrianSpeed, config.maxSpeedToUse);
-
     // TODO this seems to be a get&set to and from the same data point?
     // setTime(Teensy3Clock.get());
     // timestamp = now();
@@ -51,6 +49,8 @@ void setup()
         onSdCardActive();
     else
         Serial.println("(W) Unable to access the SD card");
+
+    audio.setup(config.audio);
 }
 
 void loop()
@@ -98,12 +98,23 @@ void loop()
             }
         }
 
-        if(config.writeCsvData)
+        if(config.writeCsvMetricsData)
         {
-            ok = fileWriter.writeCsvData(audioResults, config);
+            ok = fileWriter.writeCsvMetricsData(audioResults, config);
             if(not ok)
             {
-                Serial.println("(E) Failed to write csv data to SD card");
+                Serial.println("(E) Failed to write csv metrics data to SD card");
+                canWriteData = false;
+                // there does not seem to be a sane way to check if the SD card is back again - hope for the best
+            }
+        }
+
+        if(config.writeCsvCarData)
+        {
+            ok = fileWriter.writeCsvCarData(audioResults, config);
+            if(not ok)
+            {
+                Serial.println("(E) Failed to write csv car data to SD card");
                 canWriteData = false;
                 // there does not seem to be a sane way to check if the SD card is back again - hope for the best
             }

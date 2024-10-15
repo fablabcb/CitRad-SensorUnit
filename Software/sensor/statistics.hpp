@@ -20,6 +20,11 @@ class RingBuffer
     T get(size_t offset) const { return buffer[(index + offset) % buffer.size()]; }
 
     void set(T value) { buffer[index] = value; }
+    void add(T value)
+    {
+        set(value);
+        incrementIndex();
+    }
 
     void incrementIndex()
     {
