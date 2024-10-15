@@ -11,7 +11,7 @@ RunningMean::RunningMean(size_t n, float initialValue)
 
 float RunningMean::add(float newValue)
 {
-    value = 1 / n * ((n - 1) * value + newValue);
+    value = 1.0 / n * ((n - 1) * value + newValue);
     return value;
 }
 
@@ -25,14 +25,13 @@ HannWindowSmoothing::HannWindowSmoothing(size_t size)
     for(size_t i = 0; i < n; i++)
         window[i] = 0.5 - 0.5 * cos(2 * M_PI * i / (n - 1));
 
-    float const nan = ~0;
+    float const nan = std::numeric_limits<float>::quiet_NaN();
     buffer = RingBuffer(n, nan);
 }
 
 float HannWindowSmoothing::add(float newValue)
 {
-    buffer.set(newValue);
-    buffer.incrementIndex();
+    buffer.add(newValue);
 
     float result = 0.0f;
     for(size_t i = 0; i < n; i++)
@@ -49,7 +48,7 @@ float HannWindowSmoothing::get()
 float getAlmostMedian(std::vector<float>& data)
 {
     if(data.empty())
-        return ~0; // naN
+        return std::numeric_limits<float>::quiet_NaN();
 
     size_t const index = data.size() / 2;
     std::nth_element(data.begin(), data.begin() + index, data.end());
@@ -59,7 +58,9 @@ float getAlmostMedian(std::vector<float>& data)
 std::vector<float> filterValid(const std::vector<float>& data)
 {
     std::vector<float> result;
-    std::copy_if(data.begin(), data.end(), std::back_inserter(result), [](float const& f) { return std::isnan(f); });
+    std::copy_if(data.begin(), data.end(), std::back_inserter(result), [](float const& f) {
+        return not std::isnan(f);
+    });
 
     return result;
 }

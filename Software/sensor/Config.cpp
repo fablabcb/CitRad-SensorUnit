@@ -65,11 +65,14 @@ void Config::process(std::map<std::string, std::string> const& map)
     run<bool>(parseBool, "writeDataToSdCard", this->writeDataToSdCard, mapCpy);
     run<bool>(parseBool, "write8bit", this->write8bit, mapCpy);
     run<bool>(parseBool, "writeRawData", this->writeRawData, mapCpy);
-    run<bool>(parseBool, "writeCsvData", this->writeCsvData, mapCpy);
+    run<bool>(parseBool, "writeCsvMetricsData", this->writeCsvMetricsData, mapCpy);
+    run<bool>(parseBool, "writeCsvCarData", this->writeCsvCarData, mapCpy);
     run<bool>(parseBool, "splitLargeFiles", this->splitLargeFiles, mapCpy);
 
     run<float>(parseFloat, "signalStrengthThreshold", this->audio.signalStrengthThreshold, mapCpy);
     run<float>(parseFloat, "carSignalThreshold", this->audio.carSignalThreshold, mapCpy);
+    run<float>(parseFloat, "noiseFloorMinSpeed", this->audio.noiseLevelMinSpeed, mapCpy);
+    run<float>(parseFloat, "maxCarSpeed", this->audio.maxCarSpeed, mapCpy);
 
     run<size_t>(parseSize, "maxSecondsPerFile", this->maxSecondsPerFile, mapCpy);
     run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->audio.runningMeanHistoryN, mapCpy);
