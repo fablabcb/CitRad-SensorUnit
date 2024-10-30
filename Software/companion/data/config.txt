@@ -1,9 +1,0 @@
-writeRawData:true
-writeCsvMetricsData:true
-writeCsvCarData:true
-splitLargeFiles:true
-maxSecondsPerFile:3600
-filePrefix:unit_xy_
-carTriggerSignalSmoothingFactor:31
-dynamicNoiseSmoothingFactor:100
-
