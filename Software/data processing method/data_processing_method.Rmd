@@ -1,0 +1,325 @@
+```{r libraries}
+library(plyr)
+library(dplyr)
+library(dygraphs)
+library(viridis)
+library(furrr)
+library(purrr)
+library(viridis)
+library(future.apply)
+library(quickPlot)
+library(lubridate)
+library(gifski)
+library(runner)
+library(parallel)
+library(pracma)
+cl <- makeCluster(1)
+
+plan(multisession, workers = 1)
+options(future.globals.maxSize= 5**1024^3)
+
+knitr::opts_chunk$set(echo=F)
+source("functions.R")
+source("noise_floor_data.R")
+```
+
+
+
+# read data
+
+
+```{r, eval=F}
+detach(data_list)
+rm(data_list)
+```
+
+```{r read binary file}
+#data_list <- read_binary_file_8bit("../data/SD-Card/2024-09-23_TFZ/rawdata_2019-1-1_0-0-0.BIN")
+#data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-25_TFZ/rawdata_2019-1-1_0-2-50.BIN")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_08-43-23.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_08-46-35.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_09-46-35.bin")
+data_list <- read_binary_file_8bit("../../../data/SD-Card/2024-09-27_CoLab/test_unit_2024-09-27_10-46-35.bin")
+```
+
+
+# conversions
+
+
+```{r}
+attach(data_list)
+timestamp_minutes = timestamps/1000/60
+
+speed_conversion = (sample_rate/1024)/44.0
+speeds <- (1:1024-512) * speed_conversion
+abs_speed_above_10 <- abs(speeds) >= 10
+speed_above_10 <- speeds >= 10
+speed_below_10 <- speeds <= 10
+abs_speed_below_50 <- abs(speeds) <= 50
+
+#data_50 <- data[,abs_speed_below_50] 
+timestamps_date <- start_time + milliseconds(timestamps)
+timestamp_minutes = timestamps/1000/60
+
+noise_floor_normalized <- noise_floor - median(noise_floor)
+```
+
+
+# mean amplitude
+
+```{r}
+max_trigger_speed <- 50
+pedestrian_speed <- 10
+
+mean_amplitude <- data[, abs(speeds)>pedestrian_speed] %>% future_apply(1, mean)
+mean_amplitude_max_trigger <- data[, (abs(speeds)>pedestrian_speed & abs(speeds)<max_trigger_speed)] %>% future_apply(1, mean)
+mean_amplitude_for <- data[, speeds > 0] %>% future_apply(1, mean)
+mean_amplitude_rev <- data[, speeds < 0] %>% future_apply(1, mean)
+```
+
+
+
+# dynamic noise level
+
+```{r}
+n = noise_dynamic_smoothing_factor = 100
+dynamic_noise_level <- simple_runmean(mean_amplitude, n)
+```
+
+
+# subtract frequency specific noise floor
+
+```{r flatten data}
+data_flattened <- data %>% future_apply(1, function(x) x-noise_floor_normalized) %>% t()
+```
+
+
+# find signal and record frequency (speed) and signal strength (amplitude)
+
+```{r flatten data}
+find_max_speed <- function(x){
+  l <- length(x)
+  m =l/2
+  ii = 1:(m-1)
+  max = -200
+  max_i = m
+  for(i in ii){
+    if(x[m+i]>max){
+      if(x[m+i]>x[m-i]){
+        max = x[m+i]
+        max_i = m+i
+      }
+    }
+  }
+
+  max_rev = -200
+  max_i_rev = 0
+  m=m
+  for(i in ii){
+    if(x[m-i]>max_rev){
+      if(x[m-i]>x[m+i]){
+        max_rev = x[m-i]
+        max_i_rev = m-i
+      }
+    }
+  }
+  return(c(signal_strength_for=max, signal_strength_rev=max_rev, freq_i_for=max_i, freq_i_rev=max_i_rev))
+}
+
+signal <- data_flattened %>% future_apply(1, find_max_speed)  %>% t %>% as_tibble
+
+signal$speed_for <- speeds[signal$freq_i_for]
+signal$speed_rev <- speeds[signal$freq_i_rev]
+```
+
+# relative signal strength 
+
+```{r detect signal}
+signal$relative_signal_strength_for <- signal$signal_strength_for - dynamic_noise_level
+signal$relative_signal_strength_rev <- signal$signal_strength_rev - dynamic_noise_level
+```
+
+# signal over threshold
+
+```{r detect signal}
+signal_threshold = 20
+
+signal$signal_detected_for <- signal$relative_signal_strength_for > signal_threshold
+signal$signal_detected_rev <- signal$relative_signal_strength_rev > signal_threshold
+signal$speed_for[!signal$signal_detected_for] <- NA
+signal$speed_rev[!signal$signal_detected_rev] <- NA
+```
+
+
+
+
+# car trigger signal
+
+```{r}
+n = car_trigger_signal_smoothing_factor = 61
+
+car_trigger_signal <- runner(mean_amplitude_max_trigger, f=weighted.mean, k=n, lag=-(n-1)/2, w= dnorm((-(n-1)/2):((n-1)/2),sd=(n-1)/8), na_pad = T)
+
+car_trigger_direction_signal <- c(NA, diff(car_trigger_signal))
+```
+
+
+
+
+
+# calc car statistics
+
+```{r calc car statistic}
+diff_threshold <- 0.1
+trigger_start <- NA
+trigger_start_shorter <- NA
+trigger_end <- NA
+trigger_max <- NA
+trigger_min <- NA
+trigger_direction <- NA
+
+i = 1
+j = 1
+k = 1
+metrics = list(trigger_start=NA, trigger_end=NA, trigger_direction=NA, car_speed=NA)
+cars <- list(forward=metrics, reverse=metrics)
+
+while(i <= length(car_trigger_direction_signal)){
+  if(is.na(car_trigger_direction_signal[i]) | car_trigger_direction_signal[i] < diff_threshold){
+    i=i+1
+  }else{
+    trigger_start <- i
+    trigger_end <- i
+    trigger_max <- car_trigger_direction_signal[i]
+    trigger_min <- car_trigger_direction_signal[i]
+    i = i+1
+    while(i <= length(car_trigger_direction_signal) && !is.na(car_trigger_direction_signal[i]) && car_trigger_direction_signal[i] >= 0){
+      # calc max
+      if(car_trigger_direction_signal[i] > trigger_max){
+        trigger_start_shorter <- i
+        trigger_max = car_trigger_direction_signal[i]
+      }
+      i=i+1
+    }
+    while(i <= length(car_trigger_direction_signal) && !is.na(car_trigger_direction_signal[i]) && car_trigger_direction_signal[i] <= 0){
+      # calc min
+      if(car_trigger_direction_signal[i] < trigger_min){
+        trigger_min = car_trigger_direction_signal[i]
+        trigger_end <- i
+      }
+      i=i+1
+    }
+    
+    if(trigger_max > -trigger_min ){
+      #&  (trigger_end - trigger_start)>10
+      cars$forward$trigger_start[j] <- trigger_start
+      cars$forward$trigger_end[j] <- trigger_end
+      cars$forward$trigger_length[j] <- trigger_end - trigger_start
+      cars$forward$trigger_start_time[j] <- timestamps[trigger_start]
+      cars$forward$trigger_end_time[j] <- timestamps[trigger_end]
+      cars$forward$trigger_duration[j] <- cars$forward$trigger_end_time[j] - cars$forward$trigger_start_time[j] 
+      cars$forward$trigger_direction[j] = 1
+      # search index is the first 200 entries from last trigger to this trigger
+      search_index <- max(1, cars$forward$trigger_end[j-1], na.rm = T):trigger_start %>% head(200)
+      # save median speed into last trigger (speed for this trigger is still in the future)
+      cars$forward$car_speed[j-1] = median(signal$speed_for[search_index], na.rm=T)
+      cars$forward$car_length[j-1] = round(cars$forward$car_speed[j-1] * cars$forward$trigger_duration[j-1] /3600)
+      j = j+1
+    }
+    
+    if(trigger_max < -trigger_min){
+      #&  (trigger_end - trigger_start_shorter)>10
+      
+      cars$reverse$trigger_start[k] = trigger_start_shorter
+      cars$reverse$trigger_end[k] <- trigger_end
+      cars$reverse$trigger_length[k] <- trigger_end - trigger_start_shorter
+      cars$reverse$trigger_start_time[k] <- timestamps[trigger_start_shorter]
+      cars$reverse$trigger_end_time[k] <- timestamps[trigger_end]
+      cars$reverse$trigger_duration[k] <- cars$reverse$trigger_end_time[k] - cars$reverse$trigger_start_time[k] 
+      cars$reverse$trigger_direction[k] = -1
+      # search index is the last 200 entries from last trigger to this trigger
+      search_index <- max(1, cars$reverse$trigger_end[k-1], na.rm = T):trigger_start_shorter %>% tail(200)
+      # save median speed into this trigger
+      cars$reverse$car_speed[k] = median(signal$speed_rev[search_index], na.rm=T)
+      cars$reverse$car_length[k] = round(-cars$reverse$car_speed[k] * cars$reverse$trigger_duration[k] /3600)
+      k=k+1
+    }
+    # continue if up and down cycle is over
+  }
+}
+```
+
+
+
+
+# plot data
+
+
+```{r}
+index <- 2e+5:nrow(data)
+index <- 76200:77800
+index <- 2000:4000
+index <- 3000:1.25e+5/4
+index <- 3000:1.25e+5/2
+index <- 1:nrow(data_flattened)
+
+tick_positions <- seq(min(index), max(index), length.out=200)
+tick_labels <- (start_time + minutes(round(timestamp_minutes[tick_positions]))) %>% with_tz("CET") %>%
+  format("%Y-%m-%d\n%H:%M:%S %Z") %>% paste(., "\n", round(tick_positions))
+```
+
+
+```{r create graph}
+system.time({
+filename = paste0("./Grafiken/", as.numeric(Sys.time()), ".png")
+png(filename, height = 700, width = 50000)
+
+# plot spectrum
+image(index, speeds, data_flattened[index,], col=magma(100), xaxt = "n", useRaster = T)
+
+# axis and grid lines
+axis(1, tick_positions, tick_labels, mgp=c(3, 2, 0))
+abline(h=-10:10*10, col="black")
+abline(h=c(-60, 0,60), col="black", lwd=2)
+
+# plot signal
+points(index, signal$speed_for[index], pch=20, cex=0.5, col="lightblue")
+points(index, signal$speed_rev[index], pch=20, cex=0.5, col="green")
+
+# plot trigger signal
+lines(index, car_trigger_signal[index], col="white")
+
+# plot trigger signal differential
+lines(index, car_trigger_direction_signal[index]*30)
+
+# plot car statistics
+with(cars$forward,{
+  rect(xleft = trigger_start, xright = trigger_end, ybottom = 0, ytop = 140, density=10)
+  segments(x0 = head(trigger_end,-1), x1=pmin(head(trigger_end,-1)+200, tail(trigger_start,-1)), y0=head(car_speed,-1), y1=head(car_speed,-1), col="white", lwd=2)
+  text((trigger_start+(trigger_end-trigger_start)/2), 110, labels = paste0("#", 1:length(trigger_end), "\ns=", round(car_speed), "\n", "km/h", "\nd=", trigger_duration, "\nl=", car_length), col="white")
+})
+with(cars$reverse,{
+  rect(xleft = trigger_start, xright = trigger_end, ybottom = -140, ytop = 0, density=10, angle = -45)
+  segments(x0 = pmax(tail(trigger_start,-1)-200, head(trigger_end,-1)), x1=tail(trigger_start,-1), y0=tail(car_speed,-1), y1=tail(car_speed, -1), col="white", lwd=2)
+  text((trigger_start+(trigger_end-trigger_start)/2), -110, labels = paste0("#", 1:length(trigger_end), "\ns=", round(-car_speed), "\n", "km/h", "\nd=", trigger_duration, "\nl=", car_length), col="white")
+})
+
+dev.off()
+})
+```
+
+```{r}
+detach(data_list)
+rm(data_list)
+```
+
+```{r}
+hist(cars$forward$car_speed[cars$forward$car_speed>2], breaks = 0:70)
+hist(-cars$reverse$car_speed[cars$forward$car_speed>2], breaks = 0:70)
+```
+
+```{r}
+hist(cars$forward$car_length[cars$forward$car_length>2], breaks=1:40)
+hist(cars$reverse$car_length[cars$reverse$car_length>2], breaks=1:40)
+```
+
