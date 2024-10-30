@@ -1,8 +1,8 @@
 #ifndef FILEIO_HPP
 #define FILEIO_HPP
 
-#include "AudioSystem.h"
 #include "Config.hpp"
+#include "SignalAnalyzer.hpp"
 
 #include <SD.h>
 
@@ -14,9 +14,9 @@
 class FileIO
 {
   public:
-    bool writeRawData(AudioSystem::Results const& audioResults, Config const& config);
-    bool writeCsvMetricsData(AudioSystem::Results const& audioResults, Config const& config);
-    bool writeCsvCarData(AudioSystem::Results const& audioResults, Config const& config);
+    bool writeRawData(SignalAnalyzer::Results const& audioResults, Config const& config);
+    bool writeCsvMetricsData(SignalAnalyzer::Results const& audioResults, Config const& config);
+    bool writeCsvCarData(SignalAnalyzer::Results const& audioResults, Config const& config);
 
     void setupSpi();
     bool setupSdCard();

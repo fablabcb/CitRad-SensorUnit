@@ -69,16 +69,16 @@ void Config::process(std::map<std::string, std::string> const& map)
     run<bool>(parseBool, "writeCsvCarData", this->writeCsvCarData, mapCpy);
     run<bool>(parseBool, "splitLargeFiles", this->splitLargeFiles, mapCpy);
 
-    run<float>(parseFloat, "signalStrengthThreshold", this->audio.signalStrengthThreshold, mapCpy);
-    run<float>(parseFloat, "carSignalThreshold", this->audio.carSignalThreshold, mapCpy);
-    run<float>(parseFloat, "noiseFloorMinSpeed", this->audio.noiseLevelMinSpeed, mapCpy);
-    run<float>(parseFloat, "maxCarSpeed", this->audio.maxCarSpeed, mapCpy);
+    run<float>(parseFloat, "signalStrengthThreshold", this->analyzer.signalStrengthThreshold, mapCpy);
+    run<float>(parseFloat, "carSignalThreshold", this->analyzer.carSignalThreshold, mapCpy);
+    run<float>(parseFloat, "maxCarSpeed", this->analyzer.maxCarSpeed, mapCpy);
+    run<float>(parseFloat, "noiseFloorMinSpeed", this->analyzer.noiseLevelMinSpeed, mapCpy);
 
     run<size_t>(parseSize, "maxSecondsPerFile", this->maxSecondsPerFile, mapCpy);
-    run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->audio.runningMeanHistoryN, mapCpy);
-    run<size_t>(parseSize, "carTriggerSignalSmoothingFactor", this->audio.hannWindowN, mapCpy);
-    run<size_t>(parseSize, "carSignalLengthMinimum", this->audio.carSignalLengthMinimum, mapCpy);
-    run<size_t>(parseSize, "carSignalBufferLength", this->audio.carSignalBufferLength, mapCpy);
+    run<size_t>(parseSize, "dynamicNoiseSmoothingFactor", this->analyzer.runningMeanHistoryN, mapCpy);
+    run<size_t>(parseSize, "carTriggerSignalSmoothingFactor", this->analyzer.hannWindowN, mapCpy);
+    run<size_t>(parseSize, "carSignalLengthMinimum", this->analyzer.carSignalLengthMinimum, mapCpy);
+    run<size_t>(parseSize, "carSignalBufferLength", this->analyzer.carSignalBufferLength, mapCpy);
 
     run<std::string>(parseString, "filePrefix", this->filePrefix, mapCpy);
 

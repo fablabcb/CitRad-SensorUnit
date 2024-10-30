@@ -22,6 +22,8 @@ HannWindowSmoothing::HannWindowSmoothing(size_t size)
         n += 1;
 
     window.resize(n);
+
+    // hann window
     for(size_t i = 0; i < n; i++)
         window[i] = 0.5 - 0.5 * cos(2 * M_PI * i / (n - 1));
 
@@ -37,12 +39,13 @@ float HannWindowSmoothing::add(float newValue)
     for(size_t i = 0; i < n; i++)
         result += window[i] * buffer.get(i);
 
-    return result / ((n - 1) / 2);
+    currentValue = result / ((n - 1) / 2);
+    return currentValue;
 }
 
 float HannWindowSmoothing::get()
 {
-    return buffer.get(0);
+    return currentValue;
 }
 
 float getAlmostMedian(std::vector<float>& data)

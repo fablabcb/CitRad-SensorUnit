@@ -5,18 +5,12 @@ project(CitradSU
     DESCRIPTION "Citrad Sensor Unit"
     LANGUAGES CXX)
 
-#include(arduino-teensy40.toolchain)
-
 add_definitions(-DTEENSYDUINO=120 -D__AVR__)
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR avr)
 
-set(TEENSY_ROOT /home/blackonyx/.arduino15/packages/teensy/tools/teensy-compile/11.3.1/avr)
+set(TEENSY_ROOT ~/.arduino15/packages/teensy/tools/teensy-compile/11.3.1/avr)
 set(CMAKE_SYSROOT ${TEENSY_ROOT})
-
-#set(FLAGS "-marm -march=armv7-a -mtune=cortex-a9 -mthumb-interwork -mfloat-abi=hard -mfpu=neon")
-#set(CMAKE_C_FLAGS ${FLAGS})
-#set(CMAKE_CXX_FLAGS ${FLAGS})
 
 set(CMAKE_C_COMPILER ${TEENSY_ROOT}/bin/avr-gcc)
 set(CMAKE_CXX_COMPILER ${TEENSY_ROOT}/bin/avr-g++)
@@ -47,4 +41,6 @@ add_executable(sensor
     sensor.ino
     SerialIO.hpp
     SerialIO.cpp
+    SignalAnalyzer.hpp
+    SignalAnalyzer.cpp
 )

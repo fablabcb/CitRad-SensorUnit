@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "FileIO.hpp"
 #include "SerialIO.hpp"
+#include "SignalAnalyzer.hpp"
 #include "functions.h"
 
 #include <SerialFlash.h>
@@ -9,7 +10,8 @@
 #include <utility/imxrt_hw.h>
 
 AudioSystem audio;
-AudioSystem::Results audioResults; // global to optimize for speed
+SignalAnalyzer signalAnalyzer;
+SignalAnalyzer::Results results; // global to optimize for speed
 Config config;
 
 FileIO fileWriter;
@@ -51,6 +53,11 @@ void setup()
         Serial.println("(W) Unable to access the SD card");
 
     audio.setup(config.audio);
+
+    config.analyzer.signalSampleRate = config.audio.sampleRate;
+    config.analyzer.fftWidth = AudioSystem::fftWidth;
+    config.analyzer.isIqMeasurement = config.audio.isIqMeasurement;
+    signalAnalyzer.setup(config.analyzer);
 }
 
 void loop()
@@ -81,7 +88,9 @@ void loop()
         config.audio.hasChanges = false;
     }
 
-    audio.processData(audioResults);
+    audio.extractSpectrum(results.spectrum);
+    signalAnalyzer.processData(results);
+    results.timestamp = millis();
 
     if(config.writeDataToSdCard)
     {
@@ -89,7 +98,7 @@ void loop()
 
         if(config.writeRawData)
         {
-            ok = fileWriter.writeRawData(audioResults, config);
+            ok = fileWriter.writeRawData(results, config);
             if(not ok)
             {
                 Serial.println("(E) Failed to write raw data to SD card");
@@ -100,7 +109,7 @@ void loop()
 
         if(config.writeCsvMetricsData)
         {
-            ok = fileWriter.writeCsvMetricsData(audioResults, config);
+            ok = fileWriter.writeCsvMetricsData(results, config);
             if(not ok)
             {
                 Serial.println("(E) Failed to write csv metrics data to SD card");
@@ -111,7 +120,7 @@ void loop()
 
         if(config.writeCsvCarData)
         {
-            ok = fileWriter.writeCsvCarData(audioResults, config);
+            ok = fileWriter.writeCsvCarData(results, config);
             if(not ok)
             {
                 Serial.println("(E) Failed to write csv car data to SD card");
@@ -125,5 +134,5 @@ void loop()
     }
 
     if(sendOutput)
-        serialIO.sendOutput(audioResults, audio, config);
+        serialIO.sendOutput(results, audio.getPeak(), config);
 }

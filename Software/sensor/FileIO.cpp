@@ -35,13 +35,15 @@ void openNewUniqueFile(File& file, String const& baseName, String const& fileExt
     file = SD.open(newName.c_str(), FILE_WRITE);
 }
 
-bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const& config)
+bool FileIO::writeRawData(SignalAnalyzer::Results const& analyzerResults, Config const& config)
 {
     uint8_t dataSize = config.write8bit ? 1 : 4;
 
-    // binsToProcess is a band; we ignore the start value if we have IQ-data
-    size_t binCount = config.audio.isIqMeasurement ? audioResults.setupData.binsToProcess.to * 2 + 1
-                                                   : audioResults.setupData.binsToProcess.count();
+    // binsToProcess is a band; we should not ignore the start value here if we have IQ-data to let others do work
+    // we should configure if we want ALL data or if we want to ignore certain parts.. To test future processing it
+    // might be better to just have everything
+    size_t binCount = config.audio.isIqMeasurement ? analyzerResults.setupData.binsToProcess.to * 2 + 2
+                                                   : analyzerResults.setupData.binsToProcess.count();
 
     bool ok = true;
     if(hasToCreateNew(rawFile, config, rawFileCreation))
@@ -51,27 +53,29 @@ bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const
             return false;
     }
 
-    if(rawFile.write((byte*)&audioResults.timestamp, 4) != 4)
+    if(rawFile.write((byte*)&analyzerResults.timestamp, 4) != 4)
         return false;
 
     if(rawFile.write(&binCount, 4) != 4)
         return false;
 
     size_t startIndex = config.audio.isIqMeasurement
-                            ? audioResults.setupData.iqOffset - 1 - audioResults.setupData.binsToProcess.to
-                            : audioResults.setupData.binsToProcess.from;
-    for(int i = startIndex; i < startIndex + binCount; i++)
+                            ? analyzerResults.setupData.iqOffset - analyzerResults.setupData.binsToProcess.to
+                            : analyzerResults.setupData.binsToProcess.from;
+    for(size_t i = startIndex; i < startIndex + binCount; i++)
     {
         if(config.write8bit)
-            ok = rawFile.write((uint8_t)audioResults.spectrum[i]);
+        {
+            ok = rawFile.write((uint8_t)std::abs(analyzerResults.spectrum[i]));
+        }
         else
-            ok = rawFile.write((byte*)&audioResults.spectrum[i], dataSize);
+            ok = rawFile.write((byte*)&analyzerResults.spectrum[i], dataSize);
 
         if(not ok)
             return false;
     }
 
-    static const uint32_t endMarker = ~0; // all ones
+    static const uint32_t endMarker{~uint32_t{0}}; // all ones
     if(rawFile.write(&endMarker, 4) != 4)
         return false;
 
@@ -79,7 +83,7 @@ bool FileIO::writeRawData(AudioSystem::Results const& audioResults, Config const
     return true;
 }
 
-bool FileIO::writeCsvMetricsData(AudioSystem::Results const& audioResults, Config const& config)
+bool FileIO::writeCsvMetricsData(SignalAnalyzer::Results const& analyzerResults, Config const& config)
 {
     if(hasToCreateNew(csvMetricsFile, config, csvMetricsFileCreation))
     {
@@ -88,29 +92,29 @@ bool FileIO::writeCsvMetricsData(AudioSystem::Results const& audioResults, Confi
             return false;
     }
 
-    csvMetricsFile.print(audioResults.timestamp);
+    csvMetricsFile.print(analyzerResults.timestamp);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.forward.detectedSpeed);
+    csvMetricsFile.print(analyzerResults.forward.detectedSpeed);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.reverse.detectedSpeed);
+    csvMetricsFile.print(analyzerResults.reverse.detectedSpeed);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.forward.maxAmplitude);
+    csvMetricsFile.print(analyzerResults.forward.maxAmplitude);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.reverse.maxAmplitude);
+    csvMetricsFile.print(analyzerResults.reverse.maxAmplitude);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.forward.binsWithSignal);
+    csvMetricsFile.print(analyzerResults.forward.binsWithSignal);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.reverse.binsWithSignal);
+    csvMetricsFile.print(analyzerResults.reverse.binsWithSignal);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.data.meanAmplitudeForPedestrians);
+    csvMetricsFile.print(analyzerResults.data.meanAmplitudeForPedestrians);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.data.meanAmplitudeForCars);
+    csvMetricsFile.print(analyzerResults.data.meanAmplitudeForCars);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.data.meanAmplitudeForNoiseLevel);
+    csvMetricsFile.print(analyzerResults.data.meanAmplitudeForNoiseLevel);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.data.dynamicNoiseLevel);
+    csvMetricsFile.print(analyzerResults.data.dynamicNoiseLevel);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(audioResults.data.carTriggerSignal);
+    csvMetricsFile.print(analyzerResults.data.carTriggerSignal);
 
     csvMetricsFile.println("");
     csvMetricsFile.flush();
@@ -118,10 +122,10 @@ bool FileIO::writeCsvMetricsData(AudioSystem::Results const& audioResults, Confi
     return true;
 }
 
-bool FileIO::writeCsvCarData(AudioSystem::Results const& audioResults, Config const& config)
+bool FileIO::writeCsvCarData(SignalAnalyzer::Results const& analyzerResults, Config const& config)
 {
     bool hasResult =
-        audioResults.completedForwardDetection.has_value() || audioResults.completedReverseDetection.has_value();
+        analyzerResults.completedForwardDetection.has_value() || analyzerResults.completedReverseDetection.has_value();
 
     if(not hasResult)
         return true;
@@ -133,7 +137,7 @@ bool FileIO::writeCsvCarData(AudioSystem::Results const& audioResults, Config co
             return false;
     }
 
-    auto print = [this](std::optional<AudioSystem::Results::ObjectDetection> const& optDetection) {
+    auto print = [this](std::optional<SignalAnalyzer::Results::ObjectDetection> const& optDetection) {
         if(not optDetection.has_value())
             return;
 
@@ -143,7 +147,7 @@ bool FileIO::writeCsvCarData(AudioSystem::Results const& audioResults, Config co
         csvCarFile.print(", ");
         csvCarFile.print(detection.isForward ? "1" : "0");
         csvCarFile.print(", ");
-        csvCarFile.print(detection.sampleCount);
+        csvCarFile.print(detection.validSpeedCount);
         csvCarFile.print(", ");
         csvCarFile.print(detection.medianSpeed);
         csvCarFile.println("");
@@ -152,14 +156,14 @@ bool FileIO::writeCsvCarData(AudioSystem::Results const& audioResults, Config co
         Serial.print(", ");
         Serial.print(detection.isForward ? "1" : "0");
         Serial.print(", ");
-        Serial.print(detection.sampleCount);
+        Serial.print(detection.validSpeedCount);
         Serial.print(", ");
         Serial.print(detection.medianSpeed);
         Serial.println("");
     };
 
-    print(audioResults.completedForwardDetection);
-    print(audioResults.completedReverseDetection);
+    print(analyzerResults.completedForwardDetection);
+    print(analyzerResults.completedReverseDetection);
 
     csvCarFile.flush();
 
@@ -191,8 +195,8 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     rawFile.write((byte*)&timestamp, 4);
     rawFile.write((byte*)&binCount, 2);
     rawFile.write((byte*)&dataSize, 1);
-    rawFile.write((byte*)&config.audio.isIqMeasurement, 1);
-    rawFile.write((byte*)&config.audio.sampleRate, 2);
+    rawFile.write((byte*)&config.analyzer.isIqMeasurement, 1);
+    rawFile.write((byte*)&config.analyzer.signalSampleRate, 2);
     rawFile.flush();
 
     rawFileCreation = std::chrono::steady_clock::now();
@@ -223,9 +227,9 @@ bool FileIO::openCsvMetricsFile(Config const& config)
                          "meanAmplitudeForPedestrians, meanAmplitudeForCars, meanAmplitudeForNoiseLevel, ");
 
     csvMetricsFile.print(", dynamic_noise_level_");
-    csvMetricsFile.print(config.audio.runningMeanHistoryN);
+    csvMetricsFile.print(config.analyzer.runningMeanHistoryN);
     csvMetricsFile.print(", car_trigger_signal_");
-    csvMetricsFile.print(config.audio.hannWindowN);
+    csvMetricsFile.print(config.analyzer.hannWindowN);
     csvMetricsFile.println("");
 
     csvMetricsFile.flush();
@@ -253,6 +257,19 @@ bool FileIO::openCsvCarFile(Config const& config)
         Serial.println("(E) Failed to open new car csv file");
         return false;
     }
+
+    csvCarFile.println(
+        "//signalStrengthThreshold, carSignalThreshold, dynamicNoiseSmoothingFactor, carTriggerSignalSmoothingFactor");
+    csvCarFile.print("//");
+    csvCarFile.print(config.analyzer.signalStrengthThreshold);
+    csvCarFile.print(" ");
+    csvCarFile.print(config.analyzer.carSignalThreshold);
+    csvCarFile.print(" ");
+    csvCarFile.print(config.analyzer.runningMeanHistoryN);
+    csvCarFile.print(" ");
+    csvCarFile.print(config.analyzer.hannWindowN);
+    csvCarFile.println("");
+
     csvCarFile.println("timestamp, isForward, sampleCount, medianSpeed");
     csvCarFile.flush();
 
