@@ -289,6 +289,18 @@ bool FileIO::setupSdCard()
     return SD.begin(SDCARD_CS_PIN) == 1;
 }
 
+std::string trimmed(std::string const& input)
+{
+    std::string result = input;
+
+    auto const isSpace = [](unsigned char ch) { return !std::isspace(ch); };
+
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), isSpace));
+    result.erase(std::find_if(result.rbegin(), result.rend(), isSpace).base(), result.end());
+
+    return result;
+}
+
 std::map<std::string, std::string> FileIO::readConfigFile() const
 {
     std::map<std::string, std::string> result;
@@ -306,7 +318,7 @@ std::map<std::string, std::string> FileIO::readConfigFile() const
             value = configFile.readStringUntil('\n');
 
             if(key.length() > 0 && value.length() > 0)
-                result[key.c_str()] = value.c_str();
+                result[trimmed(key.c_str())] = trimmed(value.c_str());
         }
 
         configFile.close();
