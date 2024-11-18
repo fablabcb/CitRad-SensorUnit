@@ -102,10 +102,6 @@ bool FileIO::writeCsvMetricsData(SignalAnalyzer::Results const& analyzerResults,
     csvMetricsFile.print(", ");
     csvMetricsFile.print(analyzerResults.reverse.maxAmplitude);
     csvMetricsFile.print(", ");
-    csvMetricsFile.print(analyzerResults.forward.binsWithSignal);
-    csvMetricsFile.print(", ");
-    csvMetricsFile.print(analyzerResults.reverse.binsWithSignal);
-    csvMetricsFile.print(", ");
     csvMetricsFile.print(analyzerResults.data.meanAmplitudeForPedestrians);
     csvMetricsFile.print(", ");
     csvMetricsFile.print(analyzerResults.data.meanAmplitudeForCars);
@@ -223,8 +219,7 @@ bool FileIO::openCsvMetricsFile(Config const& config)
         return false;
     }
     csvMetricsFile.print("timestamp, speed, speed_reverse, strength, strength_reverse, "
-                         "binsWithSignal, binsWithSignal_reverse,"
-                         "meanAmplitudeForPedestrians, meanAmplitudeForCars, meanAmplitudeForNoiseLevel, ");
+                         "meanAmplitudeForPedestrians, meanAmplitudeForCars, meanAmplitudeForNoiseLevel");
 
     csvMetricsFile.print(", dynamic_noise_level_");
     csvMetricsFile.print(config.analyzer.runningMeanHistoryN);

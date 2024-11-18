@@ -95,11 +95,6 @@ void SignalAnalyzer::Results::process(float noiseFloorDistanceThreshold, float s
             data.meanAmplitudeForCars += sForwardValue + sReverseValue;
         }
 
-        if(forwardValue > noiseFloorDistanceThreshold)
-            forward.binsWithSignal++;
-        if(reverseValue > noiseFloorDistanceThreshold)
-            reverse.binsWithSignal++;
-
         // the value has to be greater than the ghost signal on the other side to be considered
         if(forwardValue > reverseValue && forwardValue > forward.maxAmplitude)
         {

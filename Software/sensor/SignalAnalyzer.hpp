@@ -67,8 +67,6 @@ class SignalAnalyzer
             float detectedSpeed = 0.0;     // speed in m/s based on peak frequency
             size_t maxAmplitudeBin = 0;
             bool considerAsSignal = false;
-
-            uint8_t binsWithSignal = 0; // how many bins have signal over the noise threshold? // TODO unused?
         };
         struct CommonData
         {
