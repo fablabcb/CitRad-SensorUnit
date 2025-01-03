@@ -6,6 +6,7 @@
 
 namespace gfx
 {
+using Color = std::array<float, 3>;
 
 class SpectrumColorizer
 {
@@ -13,8 +14,6 @@ class SpectrumColorizer
     class ColorRingbuffer
     {
       public:
-        using Color = std::array<float, 3>;
-
         bool isEmpty() const { return colors.empty(); }
         void advance();
         Color const& get(size_t index) const;
@@ -32,7 +31,7 @@ class SpectrumColorizer
   public:
     void generateColorsIfRequried(size_t colorCount);
 
-    std::vector<std::array<float, 3>> getColorPalette() const { return colorBuffer.getColors(); }
+    std::vector<Color> getColorPalette() const { return colorBuffer.getColors(); }
 
   private:
     ColorRingbuffer colorBuffer;

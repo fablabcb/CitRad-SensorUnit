@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Main.qml</file>
+        <file>CommandSelector.qml</file>
+        <file>DeviceSelector.qml</file>
+        <file>DetectionVisualizer.qml</file>
+        <file>Style.qml</file>
+        <file>components/TabButton.qml</file>
+        <file>components/Button.qml</file>
+        <file>components/ImageRoll.qml</file>
+    </qresource>
+</RCC>

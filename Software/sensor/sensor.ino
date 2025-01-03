@@ -6,6 +6,7 @@
 #include "functions.h"
 
 #include <SerialFlash.h>
+#include <TimeLib.h> // year/month/etc
 #include <Wire.h>
 #include <utility/imxrt_hw.h>
 
@@ -78,8 +79,13 @@ void loop()
         return;
     }
 
+    // TODO remove or change - this is now handled via SerialUSB1.dtr()
     bool sendOutput = false; // send output over serial - attention: this is only send once and needs to be preserved
     // and thus might be better put into global state or something
+
+    static size_t sampleCounter = 0;
+    static size_t sendSampleCounter = 0;
+    sampleCounter++;
 
     serialIO.processInputs(config.audio, sendOutput);
     if(config.audio.hasChanges)
@@ -88,9 +94,25 @@ void loop()
         config.audio.hasChanges = false;
     }
 
-    audio.extractSpectrum(results.spectrum);
-    signalAnalyzer.processData(results);
     results.timestamp = millis();
+    audio.extractSpectrum(results.spectrum);
+
+    serialIO.onLoop(config);
+    if(SerialUSB1.dtr())
+    {
+        serialIO.sendData(
+            static_cast<char const*>((void*)results.spectrum.data()),
+            results.spectrum.size() * 4,
+            results.timestamp,
+            sendSampleCounter);
+        sendSampleCounter++;
+    }
+    else
+    {
+        sendSampleCounter = 0;
+    }
+
+    signalAnalyzer.processData(results);
 
     if(config.writeDataToSdCard)
     {

@@ -28,7 +28,10 @@ clean:
 
 .PHONY: build
 build:
-	arduino-cli compile --jobs 8 --build-path $(BUILD_DIR_ARD) --build-cache-path /tmp/arduino --fqbn $(BOARD) -v . && echo "Build OK"
+	arduino-cli compile --jobs 8 --build-path $(BUILD_DIR_ARD) --build-cache-path /tmp/arduino \
+	--fqbn $(BOARD) \
+	--build-property compiler.cpp.flags="-Wall" \
+	-v . && echo "Build OK"
 
 .PHONY: deploy
 deploy: build

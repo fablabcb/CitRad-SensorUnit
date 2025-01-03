@@ -80,7 +80,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // bei 8910 habe ich eine doppelte Erkennung
     size_t batchesToStartWith = 3000;
     size_t renderSkip = 2000;
     size_t columnToMark = 0;
@@ -170,7 +169,7 @@ int main(int argc, char* argv[])
                     visualizer.getWindowH() - graphsAreaHeight,
                     w,
                     20,
-                    gfx::Color{c[0], c[1], c[2], 1.0});
+                    gfx::Color{c[0], c[1], c[2]});
             }
         }
 

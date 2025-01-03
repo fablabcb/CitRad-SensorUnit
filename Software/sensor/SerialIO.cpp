@@ -8,13 +8,13 @@ void SerialIO::setup()
     // wait max 5s for serial connection
 
     Serial.begin(9600);
+    SerialUSB1.begin(9600);
     int counter = 5;
     while(counter > 0 && !Serial)
     {
         delay(1000);
         counter--;
     }
-    Serial.println("Hello Citizen Radar");
 }
 
 void SerialIO::printDigits(int digits)
@@ -103,18 +103,46 @@ void SerialIO::sendOutput(SignalAnalyzer::Results const& analyzerResults, float 
 {
     // send data via serial port - this is tied to the FFT_visualisation-pde java code
     auto const micGain = static_cast<int8_t>(config.audio.micGain);
-    Serial.write((byte*)&micGain, 1);
+    SerialUSB1.write((byte*)&micGain, 1);
     // this has been removed on the sensor side; we just send 0 instead
     // was: Serial.write((byte*)&analyzerResults.forward.maxAmplitudeIdx, 2);
     uint16_t fake = 0;
-    Serial.write((byte*)&fake, 2);
+    SerialUSB1.write((byte*)&fake, 2);
 
     // highest peak-to-peak distance of the signal (if >= 1 clipping occurs)
-    Serial.write((byte*)&audioPeak, 4);
+    SerialUSB1.write((byte*)&audioPeak, 4);
 
     uint16_t binCount = analyzerResults.setupData.binsToProcess.count();
-    Serial.write((byte*)&binCount, 2);
+    SerialUSB1.write((byte*)&binCount, 2);
 
     for(size_t i = analyzerResults.setupData.binsToProcess.from; i <= analyzerResults.setupData.binsToProcess.to; i++)
-        Serial.write((byte*)&(analyzerResults.noiseFloorDistance[analyzerResults.setupData.iqOffset + i + 1]), 4);
+        SerialUSB1.write((byte*)&(analyzerResults.noiseFloorDistance[analyzerResults.setupData.iqOffset + i + 1]), 4);
+}
+
+void SerialIO::sendData(char const* data, size_t size, size_t timestamp, size_t counter)
+{
+    static const uint32_t startMarker{~uint32_t{0}}; // all ones
+
+    unsigned char header[16];
+    memcpy(header + 0, &startMarker, 4);
+    memcpy(header + 4, &counter, 4);
+    memcpy(header + 8, &timestamp, 4);
+    memcpy(header + 12, &size, 4);
+
+    SerialUSB1.write((byte*)header, 16);
+    SerialUSB1.send_now();
+    SerialUSB1.write((byte*)data, size);
+}
+
+void SerialIO::onLoop(Config& config)
+{
+    bool hasConnection = Serial.dtr();
+    if(hasConnection)
+    {
+        if(not hadConnection)
+        {
+            Serial.println("Hello Citizen Radar Monitor");
+        }
+    }
+    hadConnection = hasConnection;
 }

@@ -1,10 +1,9 @@
 #include "SpectrumColorizer.hpp"
 
-#include "../../sensor/statistics.hpp"
+#include <shared/remap.hpp>
 
 #include <cassert>
 #include <cmath>
-#include <stdexcept>
 
 namespace gfx
 {
@@ -31,43 +30,20 @@ V lerp(std::vector<V> const& samplingPoints, float t)
     if(t >= samplingPoints.size())
         return samplingPoints.back();
 
-    // 01234
-    // ABCDE
-    // 3.2
     size_t lower = std::floor(t);
     size_t upper = std::ceil(t);
 
     return lerp(samplingPoints[lower], samplingPoints[upper], t - lower);
 }
 
-void SpectrumColorizer::ColorRingbuffer::advance()
+void SpectrumColorizer::generateColorsIfRequried(size_t colorCount)
 {
-    base += 1;
-    if(base == colors.size())
-        base = 0;
-}
-
-SpectrumColorizer::ColorRingbuffer::Color const& SpectrumColorizer::ColorRingbuffer::get(size_t index) const
-{
-    if(colors.empty())
-        throw std::runtime_error("Empty color vector");
-
-    auto idx = base + index;
-    while(idx >= colors.size())
-        idx -= colors.size();
-
-    return colors[idx];
-}
-
-void SpectrumColorizer::ColorRingbuffer::setSize(size_t size)
-{
-    if(colors.size() == size)
+    if(colors.size() == colorCount)
         return;
 
-    base = 0;
-    colors.resize(size);
+    colors.resize(colorCount);
 
-    std::vector<std::array<float, 3>> rawColors = {
+    std::vector<Color> rawColors = {
         {0, 0, 0},
         {0, 0, 0},
         {0, 0, 0},
@@ -87,16 +63,11 @@ void SpectrumColorizer::ColorRingbuffer::setSize(size_t size)
         {0, 0, 1},
         {0, 0, 1}};
 
-    for(size_t i = 0; i < size; i++)
+    for(size_t i = 0; i < colorCount; i++)
     {
-        float t = math::remap(1.0 * i).from(0, size - 1).to(0, rawColors.size() - 1);
+        float t = math::remap(1.0 * i).from(0, colorCount - 1).to(0, rawColors.size() - 1);
         colors[i] = lerp(rawColors, t);
     }
-}
-
-void SpectrumColorizer::generateColorsIfRequried(size_t colorCount)
-{
-    colorBuffer.setSize(colorCount);
 }
 
 } // namespace gfx
