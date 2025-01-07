@@ -40,7 +40,8 @@ class FileInputStream : public InputStream
     enum class FormatVersion
     {
         V1,
-        V2
+        V2,
+        V3
     };
 
   private:

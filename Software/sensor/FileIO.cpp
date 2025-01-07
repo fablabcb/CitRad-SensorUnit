@@ -188,7 +188,7 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     }
 
     time_t timestamp = Teensy3Clock.get();
-    const char* teensyId = teensySerialNumberAsString();
+    uint32_t teensyId = getTeensySerial();
 
     rawFile.write((byte*)&fileFormatVersion, 2);
     rawFile.write((byte*)&timestamp, 4);
@@ -196,7 +196,7 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     rawFile.write((byte*)&dataSize, 1);
     rawFile.write((byte*)&config.analyzer.isIqMeasurement, 1);
     rawFile.write((byte*)&config.analyzer.signalSampleRate, 2);
-    rawFile.write((byte*)teensyId, strlen(teensyId));
+    rawFile.write((byte*)&teensyId, 4);
     rawFile.flush();
 
     rawFileCreation = std::chrono::steady_clock::now();

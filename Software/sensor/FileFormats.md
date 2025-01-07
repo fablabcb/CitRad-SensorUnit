@@ -1,13 +1,16 @@
 # RAW File Format
 
+Current file format version: 3
+
 ## Header
 
 * 2 bytes (uint16): File Format Version
 * 4 bytes (time_t): Timestamp of file creation
 * 2 bytes (uint16): number of fft bins
 * 1 byte  (uint_8): size of each frequency value (1 or 4 bytes) -> D_SIZE
-* 1 byte  (bool):   use iq
+* 1 byte  (bool): use iq
 * 2 bytes (uint16): sample rate
+* 4 bytes (uint32): Teensy Unique Device Id
 
 ## Chunk Data
 
@@ -26,4 +29,8 @@ None.
 When reading, check for the end marker at the end of chunk data. If it is not all 1s, discard the last chunk and
 search for the next end marker. Start reading again after that one.
 
+# CSV Files
 
+The CSV files contain additional "header" lines with leading "//" comments mark and provide additional information like
+the teensy id, file format version and some parameters used during the signal detection (like the used thresholds or
+smoothing factors).

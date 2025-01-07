@@ -37,13 +37,18 @@ FileInputStream::FileInputStream(std::string const& fileName)
             formatVersion = FormatVersion::V2;
             fftWidth = 1024;
         }
+        else if(v == 3)
+        {
+            formatVersion = FormatVersion::V3;
+            fftWidth = 1024;
+        }
         else
             throw std::runtime_error("Unknown file format version " + std::to_string(v));
     }
 
     readNPrint.template operator()<uint32_t>(file, "timestamp");
     batchSize = readNPrint.template operator()<uint16_t>(file, "binCount");
-    if(formatVersion == FormatVersion::V2)
+    if(formatVersion == FormatVersion::V2 || formatVersion == FormatVersion::V3)
     {
         size_t dataSize = 1;
         dataSize = readNPrint.template operator()<u_int8_t, int>(file, "dataSize");
@@ -65,6 +70,15 @@ FileInputStream::FileInputStream(std::string const& fileName)
 
     readNPrint.template operator()<bool>(file, "isIQ");
     sampleRate = readNPrint.template operator()<uint16_t>(file, "sampleRate");
+
+    if(formatVersion == FormatVersion::V3)
+    {
+        uint32_t sn = read.template operator()<uint32_t>(file);
+        uint8_t* snp = (uint8_t*)&sn;
+
+        printf("Teensy Id: %02x-%02x-%02x-%02x\n", snp[0], snp[1], snp[2], snp[3]);
+        std::cout.flush();
+    }
 }
 
 bool FileInputStream::getNextBatch(std::vector<float>& data, size_t& timestamp)
@@ -82,6 +96,7 @@ bool FileInputStream::getNextBatch(std::vector<float>& data, size_t& timestamp)
         case FormatVersion::V1:
             return getNextBatch_version1(data, timestamp);
         case FormatVersion::V2:
+        case FormatVersion::V3: // same as v2
             return getNextBatch_version2(data, timestamp);
     }
     // should never reach this
