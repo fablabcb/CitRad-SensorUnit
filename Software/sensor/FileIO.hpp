@@ -42,7 +42,7 @@ class FileIO
     const int SDCARD_MOSI_PIN = 11; // Teensy 4 ignores this, uses pin 11
     const int SDCARD_SCK_PIN = 13;  // Teensy 4 ignores this, uses pin 13
     const int SDCARD_CS_PIN = 10;
-    const uint16_t fileFormatVersion = 2;
+    const uint16_t fileFormatVersion = 3;
 };
 
 #endif
