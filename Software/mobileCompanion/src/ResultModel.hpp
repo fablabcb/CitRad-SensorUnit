@@ -14,13 +14,12 @@ class ResultModel : public QAbstractListModel
     enum Roles
     {
         SampleIndex = Qt::UserRole + 1,
-        TriggerAge,
+        DetectionAge,
         Timestamp,
 
         // detection data
         IsForward,
         SpeedsCount,
-        SpeedMarkerAge,
         MedianSpeed,
     };
 
@@ -45,7 +44,7 @@ class ResultModel : public QAbstractListModel
     struct Item
     {
         size_t sampleIndex = 0;
-        size_t triggerAge = 0;
+        size_t detectionAge = 0;
         SignalAnalyzer::Results::ObjectDetection detection;
     };
 

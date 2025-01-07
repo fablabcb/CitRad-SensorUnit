@@ -42,7 +42,7 @@ Item {
 
             x: {
                 const baseX = root.width - (root.activeSampleIdx - model.sampleIndex)
-                return baseX - model.triggerAge - model.speedMarkerAge - (model.isForward ? 0 : width)
+                return baseX - model.detectionAge - (model.isForward ? 0 : width)
             }
 
             width: model.speedsCount
