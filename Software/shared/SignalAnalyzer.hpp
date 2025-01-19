@@ -83,11 +83,11 @@ class SignalAnalyzer
         struct ObjectDetection
         {
             bool isForward = true;       // forward or reverse
-            size_t triggerSignalAge = 0; // how many samples back the speed recording should start; depending on the
-                                         // direction we use different values (min/max) here
+            size_t triggerSignalAge = 0; // how old the trigger signal is; depending on the direction we use different
+                                         // values (min/max) here
             size_t validSpeedCount = 0;
 
-            unsigned long timestamp = 0; // ms of how long the sensor has been running
+            unsigned long timestamp = 0; // ms of how long the sensor has been running at the time of the trigger signal
             float medianSpeed = 0.0f;
             std::vector<float> speeds;
         };
@@ -131,6 +131,9 @@ class SignalAnalyzer
             size_t startAge = 0;     // start of the scan
             size_t maxSignalAge = 0; // where the maximum value was
             size_t minSignalAge = 0; // where the minimum value was
+
+            size_t maxSignalTimestamp = 0; // where the maximum value was
+            size_t minSignalTimestamp = 0; // where the minimum value was
         };
 
         RunningMean dynamicNoiseLevel;

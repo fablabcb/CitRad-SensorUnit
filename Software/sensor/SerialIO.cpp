@@ -1,5 +1,7 @@
 #include "SerialIO.hpp"
 
+#include "functions.h"
+
 #include <SerialFlash.h>
 #include <TimeLib.h>
 
@@ -141,7 +143,7 @@ void SerialIO::onLoop(Config& config)
     {
         if(not hadConnection)
         {
-            Serial.println("Hello Citizen Radar Monitor");
+            Serial.printf("Hello Citizen Radar Monitor - I am %s\n", teensySerialNumberAsString());
         }
     }
     hadConnection = hasConnection;

@@ -1,5 +1,6 @@
 #include "functions.h"
 
+#include <Arduino.h>
 #include <Audio.h>
 #include <AudioStream_F32.h>
 #include <OpenAudio_ArduinoLibrary.h>
@@ -27,4 +28,23 @@ void setI2SFreq(int freq)
 time_t getTeensy3Time()
 {
     return Teensy3Clock.get();
+}
+
+#if defined ARDUINO_TEENSY40 || defined ARDUINO_TEENSY41
+uint32_t getTeensySerial()
+{
+    uint32_t num;
+    num = HW_OCOTP_MAC0 & 0xFFFFFF;
+    return num;
+}
+#endif
+
+const char* teensySerialNumberAsString()
+{
+    uint32_t sn = getTeensySerial();
+    uint8_t* snp = (uint8_t*)&sn;
+
+    static char teensySerial[12];
+    sprintf(teensySerial, "%02x-%02x-%02x-%02x", snp[0], snp[1], snp[2], snp[3]);
+    return teensySerial;
 }

@@ -1,5 +1,7 @@
 #include "FileIO.hpp"
 
+#include "functions.h"
+
 #include <SPI.h>
 #include <TimeLib.h> // year/month/etc
 
@@ -186,6 +188,7 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     }
 
     time_t timestamp = Teensy3Clock.get();
+    uint32_t teensyId = getTeensySerial();
 
     rawFile.write((byte*)&fileFormatVersion, 2);
     rawFile.write((byte*)&timestamp, 4);
@@ -193,6 +196,7 @@ bool FileIO::openRawFile(uint16_t const binCount, Config const& config, uint8_t 
     rawFile.write((byte*)&dataSize, 1);
     rawFile.write((byte*)&config.analyzer.isIqMeasurement, 1);
     rawFile.write((byte*)&config.analyzer.signalSampleRate, 2);
+    rawFile.write((byte*)&teensyId, 4);
     rawFile.flush();
 
     rawFileCreation = std::chrono::steady_clock::now();
@@ -218,14 +222,14 @@ bool FileIO::openCsvMetricsFile(Config const& config)
         Serial.println("(E) Failed to open new metrics csv file");
         return false;
     }
+    csvMetricsFile.printf("// fileFormat=%d, teensyId=%s\n", fileFormatVersion, teensySerialNumberAsString());
     csvMetricsFile.print("timestamp, speed, speed_reverse, strength, strength_reverse, "
-                         "meanAmplitudeForPedestrians, meanAmplitudeForCars, meanAmplitudeForNoiseLevel");
+                         "meanAmplitudeForPedestrians, meanAmplitudeForCars, meanAmplitudeForNoiseLevel, ");
 
-    csvMetricsFile.print(", dynamic_noise_level_");
-    csvMetricsFile.print(config.analyzer.runningMeanHistoryN);
-    csvMetricsFile.print(", car_trigger_signal_");
-    csvMetricsFile.print(config.analyzer.hannWindowN);
-    csvMetricsFile.println("");
+    csvMetricsFile.printf(
+        "dynamic_noise_level_%d, car_trigger_signal_%d\n",
+        config.analyzer.runningMeanHistoryN,
+        config.analyzer.hannWindowN);
 
     csvMetricsFile.flush();
 
@@ -253,17 +257,15 @@ bool FileIO::openCsvCarFile(Config const& config)
         return false;
     }
 
-    csvCarFile.println(
-        "//signalStrengthThreshold, carSignalThreshold, dynamicNoiseSmoothingFactor, carTriggerSignalSmoothingFactor");
-    csvCarFile.print("//");
-    csvCarFile.print(config.analyzer.signalStrengthThreshold);
-    csvCarFile.print(" ");
-    csvCarFile.print(config.analyzer.carSignalThreshold);
-    csvCarFile.print(" ");
-    csvCarFile.print(config.analyzer.runningMeanHistoryN);
-    csvCarFile.print(" ");
-    csvCarFile.print(config.analyzer.hannWindowN);
-    csvCarFile.println("");
+    csvCarFile.printf(
+        "// fileFormat=%d, signalStrengthThreshold=%f, carSignalThreshold=%f, dynamicNoiseSmoothingFactor=%d, "
+        "carTriggerSignalSmoothingFactor=%d, teensyId=%s\n",
+        fileFormatVersion,
+        config.analyzer.signalStrengthThreshold,
+        config.analyzer.carSignalThreshold,
+        config.analyzer.runningMeanHistoryN,
+        config.analyzer.hannWindowN,
+        teensySerialNumberAsString());
 
     csvCarFile.println("timestamp, isForward, sampleCount, medianSpeed");
     csvCarFile.flush();

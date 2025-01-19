@@ -14,7 +14,7 @@ void ResultModel::add(SignalAnalyzer::Results const& results, size_t sampleIndex
 
     timestamps.add(results.timestamp);
 
-    auto getTriggerAge = [this](auto const& detection) -> std::optional<size_t> {
+    auto getDetectionAge = [this](auto const& detection) -> std::optional<size_t> {
         for(size_t i = 0; i < timestamps.size(); i++)
             if(timestamps.get(i) == detection.timestamp)
                 return i + lastResult.setupData.hannWindowN / 2;
@@ -24,15 +24,15 @@ void ResultModel::add(SignalAnalyzer::Results const& results, size_t sampleIndex
 
     if(results.completedForwardDetection.has_value())
     {
-        auto triggerAge = getTriggerAge(results.completedForwardDetection.value());
-        if(triggerAge.has_value())
-            add(results.completedForwardDetection.value(), sampleIndex, triggerAge.value());
+        auto detectionAge = getDetectionAge(results.completedForwardDetection.value());
+        if(detectionAge.has_value())
+            add(results.completedForwardDetection.value(), sampleIndex, detectionAge.value());
     }
     if(results.completedReverseDetection.has_value())
     {
-        auto triggerAge = getTriggerAge(results.completedReverseDetection.value());
-        if(triggerAge.has_value())
-            add(results.completedReverseDetection.value(), sampleIndex, triggerAge.value());
+        auto detectionAge = getDetectionAge(results.completedReverseDetection.value());
+        if(detectionAge.has_value())
+            add(results.completedReverseDetection.value(), sampleIndex, detectionAge.value());
     }
 
     emit resultAdded();
@@ -47,12 +47,13 @@ SignalAnalyzer::Results ResultModel::getLastCompleteResult() const
     return lastResult;
 }
 
-void ResultModel::add(SignalAnalyzer::Results::ObjectDetection const& detection, size_t sampleIndex, size_t triggerAge)
+void ResultModel::add(
+    SignalAnalyzer::Results::ObjectDetection const& detection, size_t sampleIndex, size_t detectionAge)
 {
     if(bool stillSpaceLeft = itemCount < items.size(); stillSpaceLeft)
     {
         beginInsertRows(QModelIndex(), itemCount, itemCount);
-        items.add(Item{sampleIndex, triggerAge, detection});
+        items.add(Item{sampleIndex, detectionAge, detection});
         itemCount++;
         endInsertRows();
         emit detectionAdded();
@@ -65,7 +66,7 @@ void ResultModel::add(SignalAnalyzer::Results::ObjectDetection const& detection,
     endRemoveRows();
 
     beginInsertRows(QModelIndex(), items.size() - 1, items.size() - 1);
-    items.add(Item{sampleIndex, triggerAge, detection});
+    items.add(Item{sampleIndex, detectionAge, detection});
     endInsertRows();
     emit detectionAdded();
 }
@@ -74,11 +75,10 @@ QHash<int, QByteArray> ResultModel::ResultModel::roleNames() const
 {
     QHash<int, QByteArray> roles;
     roles[SampleIndex] = "sampleIndex";
-    roles[TriggerAge] = "triggerAge";
+    roles[DetectionAge] = "detectionAge";
     roles[Timestamp] = "timestamp";
     roles[IsForward] = "isForward";
     roles[SpeedsCount] = "speedsCount";
-    roles[SpeedMarkerAge] = "speedMarkerAge";
     roles[MedianSpeed] = "medianSpeed";
 
     return roles;
@@ -102,16 +102,14 @@ QVariant ResultModel::data(QModelIndex const& index, int role) const
     {
         case Roles::SampleIndex:
             return static_cast<unsigned long long>(item.sampleIndex);
-        case Roles::TriggerAge:
-            return static_cast<unsigned long long>(item.triggerAge);
+        case Roles::DetectionAge:
+            return static_cast<unsigned long long>(item.detectionAge);
         case Roles::Timestamp:
             return static_cast<unsigned long long>(detection.timestamp);
         case Roles::IsForward:
             return detection.isForward;
         case Roles::SpeedsCount:
             return static_cast<unsigned long long>(detection.speeds.size());
-        case Roles::SpeedMarkerAge:
-            return static_cast<unsigned long long>(detection.triggerSignalAge);
         case Roles::MedianSpeed:
             return detection.medianSpeed;
     }

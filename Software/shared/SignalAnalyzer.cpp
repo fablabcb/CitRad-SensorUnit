@@ -126,8 +126,10 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
     float lastCarSignal = history.carTriggerSignal.get();
     results.data.carTriggerSignal = history.carTriggerSignal.add(results.data.meanAmplitudeForCars);
 
-    auto scan =
-        [this, &history, lastCarSignal](Results::CommonData const& data) -> std::optional<Results::ObjectDetection> {
+    auto const& timestamp = results.timestamp;
+
+    auto scan = [this, &history, lastCarSignal, timestamp](
+                    Results::CommonData const& data) -> std::optional<Results::ObjectDetection> {
         // if there is no value in the buffer, we just got our first measurement in and can end here
         if(std::isnan(lastCarSignal))
             return {};
@@ -165,6 +167,7 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
                 {
                     signalScan.maxSignal = carTriggerSignalDiff;
                     signalScan.maxSignalAge = 0;
+                    signalScan.maxSignalTimestamp = timestamp;
                 }
             }
             else
@@ -184,6 +187,7 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
                 {
                     signalScan.minSignal = carTriggerSignalDiff;
                     signalScan.minSignalAge = 0;
+                    signalScan.minSignalTimestamp = timestamp;
                 }
             }
             else
@@ -205,6 +209,7 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
         Results::ObjectDetection detection;
         detection.isForward = std::abs(signalScan.maxSignal) > std::abs(signalScan.minSignal);
         detection.triggerSignalAge = detection.isForward ? signalScan.minSignalAge : signalScan.maxSignalAge;
+        detection.timestamp = detection.isForward ? signalScan.minSignalTimestamp : signalScan.maxSignalTimestamp;
 
         return detection;
     };
@@ -257,7 +262,6 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
     if(newDetection.has_value())
     {
         auto& detection = newDetection.value();
-        detection.timestamp = results.timestamp;
         detection.speeds.reserve(config.carSignalBufferLength);
 
         if(detection.isForward)
@@ -276,7 +280,6 @@ void SignalAnalyzer::useAndUpdateHistory(Results& results, SignalAnalyzer::Histo
         }
 
         history.hasPastDetection = true;
-        // history.lastSpeedMarkerAge = detection.speedMarkerAge;
         history.lastSpeedMarkerAge = history.signalScan.minSignalAge;
     }
 }
